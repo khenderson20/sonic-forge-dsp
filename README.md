@@ -26,7 +26,6 @@ A high-performance, real-time C++ Digital Signal Processing (DSP) library design
 * **Real-time Safe Architecture:** Implementation follows "lock-free" and "allocation-avoidant" patterns in the audio callback to prevent priority inversion and audio glitches.
 * **Modern C++ Standard:** Leverages C++17/20 features including smart pointers for memory management, `std::atomic` for thread-safe parameter modulation, and templates for efficient buffer processing.
 * **Linux-First Development:** Optimized for Fedora environments using modern tooling including `cmake`, `clang-format`, and `gcc`.
-* **Automated Quality Assurance:** Integrated **Woodpecker CI** pipeline for automated builds, linting, and unit testing on every push.
 
 ## 📂 Project Structure
 
