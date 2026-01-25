@@ -32,3 +32,27 @@
 *.out
 *.app
 
+# ---> Build System
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# ---> IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+.ccls-cache/
+
+# ---> Generated Files
+docs/html/
+docs/latex/
+*.wav
+*.raw
+
