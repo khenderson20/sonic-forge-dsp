@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SonicForge DSP — Wavetable Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #06060a;
+            color: #c8c8d8;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+
+        /* ── Top-left readout ──────────────────────────────────── */
+        #readout {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(6, 6, 10, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 16px 20px;
+            z-index: 10;
+            pointer-events: none;
+            min-width: 200px;
+        }
+        #readout h1 {
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: #4ecdc4;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            padding: 2px 0;
+            color: #707088;
+        }
+        .metric .v { color: #d0d0e0; }
+
+        /* ── Bottom control bar ────────────────────────────────── */
+        #controls {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(6, 6, 10, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 14px 28px;
+            display: flex;
+            align-items: center;
+            gap: 28px;
+            z-index: 10;
+        }
+        #start-btn {
+            background: #4ecdc4;
+            color: #06060a;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        #start-btn:hover { background: #5ee0d7; }
+        #start-btn:disabled { opacity: 0.4; cursor: default; }
+
+        .sep { width: 1px; height: 36px; background: rgba(255,255,255,0.06); }
+
+        .ctrl {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .ctrl label {
+            font-size: 0.6rem;
+            font-weight: 500;
+            color: #58586a;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+        }
+        .ctrl .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ctrl input[type="range"] {
+            width: 80px;
+            height: 3px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #16161e;
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+        .ctrl input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: #4ecdc4;
+            cursor: pointer;
+        }
+        .ctrl .val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68rem;
+            color: #8888a0;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        .wave-btns { display: flex; gap: 4px; }
+        .wbtn {
+            background: transparent;
+            color: #58586a;
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .wbtn:hover { border-color: #4ecdc4; color: #4ecdc4; }
+        .wbtn.active { background: #4ecdc4; color: #06060a; border-color: #4ecdc4; }
+
+        /* ── Legend ────────────────────────────────────────────── */
+        #legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(6, 6, 10, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 14px 18px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        #legend .item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.68rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: #707088;
+            padding: 2px 0;
+        }
+        #legend .swatch {
+            width: 20px;
+            height: 3px;
+            border-radius: 2px;
+        }
+    </style>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="readout">
+        <h1>SonicForge Wavetable</h1>
+        <div class="metric"><span>Base Freq</span><span class="v" id="r-freq">440 Hz</span></div>
+        <div class="metric"><span>Waveform</span><span class="v" id="r-wave">Sine</span></div>
+        <div class="metric"><span>Decay</span><span class="v" id="r-decay">0.0%</span></div>
+        <div class="metric"><span>Slice</span><span class="v" id="r-slice">0 / 32</span></div>
+    </div>
+
+    <div id="legend">
+        <div class="item"><span class="swatch" style="background:#4ecdc4"></span>Waveform amplitude</div>
+        <div class="item"><span class="swatch" style="background:#e06050"></span>Decay envelope</div>
+        <div class="item"><span class="swatch" style="background:#383850"></span>Zero crossing</div>
+    </div>
+
+    <div id="controls">
+        <button id="start-btn">Start Audio</button>
+        <div class="sep"></div>
+        <div class="ctrl">
+            <label>Decay</label>
+            <div class="row">
+                <input type="range" id="decay-slider" min="0" max="100" value="0">
+                <span class="val" id="decay-val">0%</span>
+            </div>
+        </div>
+        <div class="ctrl">
+            <label>Harmonics</label>
+            <div class="row">
+                <input type="range" id="harm-slider" min="1" max="16" value="1">
+                <span class="val" id="harm-val">1</span>
+            </div>
+        </div>
+        <div class="ctrl">
+            <label>Frequency</label>
+            <div class="row">
+                <input type="range" id="freq-slider" min="40" max="1200" value="440">
+                <span class="val" id="freq-val">440 Hz</span>
+            </div>
+        </div>
+        <div class="sep"></div>
+        <div class="wave-btns">
+            <button class="wbtn active" data-wave="0">Sine</button>
+            <button class="wbtn" data-wave="1">Saw</button>
+            <button class="wbtn" data-wave="2">Square</button>
+            <button class="wbtn" data-wave="3">Tri</button>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+    <noscript>
+        <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#06060a;color:#c8c8d8;font-family:system-ui;text-align:center;padding:2rem">
+            <div>
+                <h1 style="font-size:1.5rem;color:#4ecdc4;margin-bottom:1rem">SonicForge DSP</h1>
+                <p>This application requires JavaScript. Please enable it in your browser settings.</p>
+            </div>
+        </div>
+    </noscript>
+</body>
+</html>

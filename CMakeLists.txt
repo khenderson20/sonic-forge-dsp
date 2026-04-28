@@ -86,6 +86,15 @@ set_target_properties(sonicforge PROPERTIES
 )
 
 # =============================================================================
+# WebAssembly Build (requires Emscripten toolchain)
+# =============================================================================
+option(SONICFORGE_BUILD_WEB "Build WebAssembly AudioWorklet module" OFF)
+
+if(SONICFORGE_BUILD_WEB)
+    add_subdirectory(web)
+endif()
+
+# =============================================================================
 # Example Programs
 # =============================================================================
 if(SONICFORGE_BUILD_EXAMPLES)
@@ -157,3 +166,4 @@ message(STATUS "  Build Type:     ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build Examples: ${SONICFORGE_BUILD_EXAMPLES}")
 message(STATUS "  Build Tests:    ${SONICFORGE_BUILD_TESTS}")
 message(STATUS "")
+message(STATUS "  Build Web:      ${SONICFORGE_BUILD_WEB}")

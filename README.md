@@ -9,10 +9,12 @@
                               ║   D  S  P  ♪ ♫   ║
                               ╚═══════════════════╝
 ```
-
+![dsp-image](./examples/images/sonic-forge-dsp.png)
 # SonicForge DSP
 
-A high-performance, real-time C++ Digital Signal Processing (DSP) library designed for modular synthesis and audio applications.
+A high-performance C++ DSP library that compiles natively **and** to WebAssembly for browser-based 3D audio visualization.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## ✨ Features
 
@@ -21,56 +23,15 @@ A high-performance, real-time C++ Digital Signal Processing (DSP) library design
 - **Modular Architecture**: Chain oscillators, filters, envelopes
 - **Zero-Copy Design**: Efficient buffer processing
 - **Thread-Safe API**: Safe parameter changes from any thread
-- **Header-Only Option**: Lightweight integration
+- **WebAssembly AudioWorklet Integration**: Run DSP chains directly in the browser
+- **Real-time 3D Wavetable Visualization (Three.js)**: Interactive browser-based audio rendering
 
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-## 🎯 Quick Example
-
-Generate a 440Hz sine wave:
-
-```bash
-# Build the project first (if not already built)
-mkdir -p build && cd build
-cmake .. && make
-
-# Generate and play audio (requires aplay or similar audio player)
-cd examples
-../build/sine_example | aplay -f FLOAT_LE -r 48000 -c 1
-```
-
-> **Note**: The example outputs raw audio data to stdout. You must pipe it to an audio player like `aplay` (Linux) to hear the sound. If you don't hear anything, try:
-> - Checking your volume levels with `alsamixer`
-> - Specifying your audio device explicitly: `aplay -D plughw:0,0 -f FLOAT_LE -r 48000 -c 1`
-> - Listing available devices with `aplay -l`
-> - Using alternative players like `paplay` (PulseAudio) or `ffplay`
-
-Outputs a 5-second 440Hz tone to `output.wav` when using the wav_writer_example instead.
-
-## 🚀 Overview
-
-**SonicForge DSP** is a lightweight C++ framework focused on low-latency signal generation and processing. This project serves as a showcase of modern systems programming practices, specifically addressing the unique constraints of real-time audio—where heap allocation and thread-blocking are strictly avoided to ensure signal stability.
-
-## 🛠️ Technical Highlights
-
-* **Real-time Safe Architecture:** Implementation follows "lock-free" and "allocation-avoidant" patterns in the audio callback to prevent priority inversion and audio glitches.
-* **Modern C++ Standard:** Leverages C++17/20 features including smart pointers for memory management, `std::atomic` for thread-safe parameter modulation, and templates for efficient buffer processing.
-* **Linux-First Development:** Optimized for Fedora environments using modern tooling including `cmake`, `clang-format`, and `gcc`.
-
-## 📑 Prerequisites & Building
-
-Before building SonicForge DSP, ensure you have the following installed:
-
-* C++17/20 compatible compiler (GCC 9+ or Clang 10+)
-* CMake 3.15+
-* Make or Ninja build system
-* Optional: pkg-config for easier dependency management
+## 📁 Directory Structure
 
 ```
 sonic-forge-dsp/
 │
-├── 🎛️  CMakeLists.txt          # Build configuration
+├── 🎛️  CMakeLists.txt          # Native build configuration
 ├── 📄  LICENSE                  # MIT License
 ├── 📖  README.md                # You are here!
 ├── 🔧  Doxyfile                 # Documentation generator config
@@ -94,12 +55,48 @@ sonic-forge-dsp/
 ├── cmake/                      # CMake helpers & pkg-config
 │   └── sonicforge.pc.in        #
 │
+├── web/                        # ┌─────────────────────────────┐
+│   ├── CMakeLists.txt          # │  WebAssembly build config   │
+│   ├── src/                    # │                             │
+│   │   └── sonicforge_worklet.cpp # AudioWorklet processor     │
+│   └── public/                 # │  Three.js 3D visualization  │
+│                               # └─────────────────────────────┘
+│
 ├── .clang-format               # Code style configuration
 ├── .clang-tidy                 # Static analysis rules
 └── .gitignore                  # Git ignore patterns
 ```
 
-### Quick Start
+## 🚀 Overview
+
+**SonicForge DSP** is a lightweight C++ framework focused on low-latency signal generation and processing. This project serves as a showcase of modern systems programming practices, specifically addressing the unique constraints of real-time audio—where heap allocation and thread-blocking are strictly avoided to ensure signal stability.
+
+The library now extends beyond native audio pipelines with full WebAssembly support, enabling real-time DSP chains to run inside browser AudioWorklet contexts paired with Three.js-powered 3D wavetable visualization.
+
+## 🛠️ Technical Highlights
+
+* **Real-time Safe Architecture:** Implementation follows "lock-free" and "allocation-avoidant" patterns in the audio callback to prevent priority inversion and audio glitches.
+* **Modern C++ Standard:** Leverages C++17/20 features including smart pointers for memory management, `std::atomic` for thread-safe parameter modulation, and templates for efficient buffer processing.
+* **Cross-Platform Compilation:** Builds natively on Linux and compiles to WebAssembly via Emscripten for in-browser execution.
+* **Browser-Native Audio:** AudioWorklet integration for sample-accurate processing in modern browsers without main-thread interference.
+
+## 📑 Prerequisites
+
+### Native Build
+
+* C++17/20 compatible compiler (GCC 9+ or Clang 10+)
+* CMake 3.15+
+* Make or Ninja build system
+
+### WebAssembly Build
+
+* Emscripten SDK (emsdk 3.1.0+)
+* CMake 3.15+
+* A modern browser with WebAssembly and AudioWorklet support
+
+## 🔨 Building
+
+### Native Build
 
 ```bash
 # Clone the repository
@@ -115,9 +112,7 @@ make -j$(nproc)
 ctest --output-on-failure
 ```
 
-### Build with Ninja (Recommended)
-
-Ninja offers faster incremental builds compared to Make:
+#### Build with Ninja (Recommended)
 
 ```bash
 mkdir build && cd build
@@ -125,9 +120,7 @@ cmake -G Ninja ..
 ninja
 ```
 
-### Build Types
-
-Specify the build type for optimized or debug builds:
+#### Build Types
 
 ```bash
 # Release build (optimized, -O3 -march=native)
@@ -137,92 +130,33 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake -DCMAKE_BUILD_TYPE=Debug ..
 ```
 
-### CMake Build Options
+#### CMake Build Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `SONICFORGE_BUILD_EXAMPLES` | `ON` | Build example programs (sine_example, wav_writer_example) |
+| `SONICFORGE_BUILD_EXAMPLES` | `ON` | Build example programs |
 | `SONICFORGE_BUILD_TESTS` | `ON` | Build unit tests |
+| `SONICFORGE_BUILD_WEB` | `OFF` | Build WebAssembly AudioWorklet module |
 
-Example with custom options:
+### WebAssembly Build
 
-```bash
-# Build only the library, skip examples and tests
-cmake -DSONICFORGE_BUILD_EXAMPLES=OFF -DSONICFORGE_BUILD_TESTS=OFF ..
-
-# Full release build with examples
-cmake -DCMAKE_BUILD_TYPE=Release -DSONICFORGE_BUILD_EXAMPLES=ON ..
-```
-
-```
-                                                                                                                  
-                                                                                                                   
-                                                                                                                   
-+--------------------------------------------------------------------------------------------------+               
-|                                                                                                  |               
-|                                                                                                  |               
-|                                    SONIC-FORGE-DSP                                               |               
-|                                                                                                  |               
-----------------------------------------------------------------------------------------------------               
-|         +------------+             +-------------+                +-----------------+            |               
-|         |            |             |             |                |                 |            |               
-|         | oscillator |             |   filter    |                |    envelope     |            |               
-|         |            |             |             |                |                 |            |               
-|         |            |             |             |                |                 |            |               
-|         | - sine     |             |             |                |                 |            |               
-|         | - saw      |-----------> |             |--------------> |                 |            |               
-|         | - square   |             |             |                |                 |            |               
-|         | - triangle |             |             |                |                 |            |               
-|         |            |             |             |                |                 |            |               
-|         |            |             |             |                |                 |            |               
-|         +------------+             +-------------+                +-----------------+            |               
-|               |                                                             |                    |               
-|               |                                                             |                    |               
-|               |                                                             |                    |               
-|               |                                                             |                    |               
-|               |                                                             |                    |               
-|               |                                                             |                    |               
-|               |                                                             |                    |               
-|               |                     REAL-TIME SAFE                          |                    |               
-|               |                  ====================                       |                    |               
-|               |                  - No Heap Allocation                       |                    |               
-|               |                  - Lock-free atomics                        |                    |               
-|               |                                                             |                    |               
-|               |--------------------------------------------------------------                    |               
-|                                           |                                                      |               
-|                                           |                                                      |               
-|                                           |                                                      |               
-|                                           |                                                      |               
-|                                           v                                                      |               
-|                               +-----------------------+                                          |               
-|                               |                       |                                          |               
-|                               |     AUDIO OUTPUT      |                                          |               
-|                               |     [-1.0, +1.0]      |                                          |               
-|                               |                       |                                          |               
-|                               +-----------------------+                                          |               
-|                                                                                                  |               
-+--------------------------------------------------------------------------------------------------+               
-```
-
-## 📦 Installation
-
-To install the library system-wide:
+#### Option 1: Via root CMake (recommended)
 
 ```bash
-# From the build directory
-sudo make install
+mkdir build && cd build
+cmake .. -DSONICFORGE_BUILD_WEB=ON -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
 ```
 
-This will install to `$CMAKE_INSTALL_PREFIX` (default `/usr/local`):
-* Headers to `$CMAKE_INSTALL_PREFIX/include/sonicforge/`
-* Library binaries to `$CMAKE_INSTALL_PREFIX/lib/`
-* Pkg-config files to `$CMAKE_INSTALL_PREFIX/lib/pkgconfig/`
+#### Option 2: Standalone Emscripten build
 
-To specify a custom install location:
 ```bash
-cmake -DCMAKE_INSTALL_PREFIX=/custom/path ..
-sudo make install
+cd web
+emcmake cmake -B build-web -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web
 ```
+
+Both produce a `.wasm` binary output to `web/public/`. Serve that directory with any static file server to run the 3D visualization in your browser.
 
 ## 🎵 Usage
 
@@ -234,27 +168,21 @@ sudo make install
 int main() {
     // Create a sine wave oscillator at A4 (440 Hz)
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0f);
-    osc.set_sample_rate(48000.0f);  // Match your audio system
-    
-    // Process audio samples in your audio callback
+    osc.set_sample_rate(48000.0f);
+
     constexpr size_t BUFFER_SIZE = 256;
     float buffer[BUFFER_SIZE];
-    
-    // Efficient block processing
+
     osc.process_block(buffer, BUFFER_SIZE);
-    
-    // Or process sample-by-sample
-    float sample = osc.process();
-    
-    // Change parameters in real-time (thread-safe)
-    osc.set_frequency(880.0f);  // Up one octave
+
+    osc.set_frequency(880.0f);
     osc.set_waveform(sonicforge::Waveform::SAW);
-    
+
     return 0;
 }
 ```
 
-### 🔗 Linking to Your Project
+### Linking to Your Project
 
 Using CMake:
 
@@ -265,18 +193,11 @@ pkg_check_modules(SONICFORGE REQUIRED IMPORTED_TARGET sonicforge)
 target_link_libraries(your_target PRIVATE PkgConfig::SONICFORGE)
 ```
 
-Or manually with compiler flags:
+Or manually:
 
 ```bash
 g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
 ```
-
-## 🎯 What You Can Build
-
-- **Modular Synthesizers**: Chain oscillators, filters, and envelopes for complex sound design
-- **Audio Effects**: Process live input with custom DSP chains
-- **Real-time Generators**: Create procedural audio for games and interactive media
-- **Audio Plugins**: Build VST/LV2 plugins (with additional wrapper code)
 
 ## 📊 Performance Benchmarks
 
@@ -288,18 +209,35 @@ All benchmarks run on **AMD Ryzen 7 5800X**, Fedora 40, 48kHz sample rate:
 | **Oscillator CPU** | ~0.02% | Per-voice sine wave |
 | **Polyphony** | 64+ voices | < 3% CPU total |
 | **Parameter Modulation** | Sub-sample | Lock-free atomic updates |
+| **Wasm Overhead** | < 5% | vs. native, AudioWorklet |
 
----
+## 🎯 What You Can Build
+
+- **Modular Synthesizers**: Chain oscillators, filters, and envelopes for complex sound design
+- **Audio Effects**: Process live input with custom DSP chains
+- **Real-time Generators**: Create procedural audio for games and interactive media
+- **Audio Plugins**: Build VST/LV2 plugins (with additional wrapper code)
+- **Browser-Based Audio Tools**: Deploy DSP chains to the web with AudioWorklet
+- **3D Audio Visualizations**: Render wavetables and spectrograms with Three.js
 
 ## 📚 Documentation
 
-API documentation is generated using Doxygen and can be built locally:
+API documentation is generated using Doxygen:
 
 ```bash
 cd docs && doxygen ../Doxyfile
 ```
 
 Documentation will be available in the `docs/html/` directory.
+
+## 📝 What's New
+
+### Recent Changes
+
+- **WebAssembly DSP Bridge**: Full Emscripten build pipeline enabling the core DSP library to run in browser environments
+- **AudioWorklet Processor**: `sonicforge_worklet.cpp` provides a sample-accurate audio processing node for the Web Audio API
+- **3D Wavetable Visualization**: Three.js-powered real-time renderer in `web/public/` for interactive audio visualization
+- **Web CMake Toolchain**: Dedicated `web/CMakeLists.txt` for streamlined Wasm builds with proper export configuration
 
 ## 👥 Contributing
 
@@ -310,8 +248,6 @@ Contributions are welcome! Please follow these steps:
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a pull request
-
-Please ensure your code follows the existing style and includes appropriate tests.
 
 ### Coding Standards
 

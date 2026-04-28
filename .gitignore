@@ -57,3 +57,8 @@ docs/latex/
 *.wav
 *.raw
 
+# ---> Web Build
+web/build-web/
+web/public/*.wasm
+web/public/sonicforge.js
+
