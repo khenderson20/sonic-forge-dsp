@@ -12,8 +12,9 @@
  * it via a Float32Array view into the Wasm linear memory every render quantum.
  */
 
-#include <emscripten/emscripten.h>
 #include <sonicforge/oscillator.hpp>
+
+#include <emscripten/emscripten.h>
 
 #include <cmath>
 
@@ -52,16 +53,16 @@ float* get_buffer() {
  */
 EMSCRIPTEN_KEEPALIVE
 int audio_init(int waveform, float frequency, float sample_rate) {
-    if (waveform < 0 || waveform > 3) return -1;
-    if (frequency <= 0.0f || !std::isfinite(frequency)) return -2;
-    if (sample_rate <= 0.0f || !std::isfinite(sample_rate)) return -3;
+    if (waveform < 0 || waveform > 3)
+        return -1;
+    if (frequency <= 0.0f || !std::isfinite(frequency))
+        return -2;
+    if (sample_rate <= 0.0f || !std::isfinite(sample_rate))
+        return -3;
 
     delete g_oscillator;
-    g_oscillator = new sonicforge::Oscillator(
-        static_cast<sonicforge::Waveform>(waveform),
-        frequency,
-        sample_rate
-    );
+    g_oscillator = new sonicforge::Oscillator(static_cast<sonicforge::Waveform>(waveform),
+                                              frequency, sample_rate);
     return 0;
 }
 
@@ -89,7 +90,8 @@ void audio_process(int num_samples) {
  */
 EMSCRIPTEN_KEEPALIVE
 void audio_set_frequency(float frequency) {
-    if (g_oscillator) g_oscillator->set_frequency(frequency);
+    if (g_oscillator)
+        g_oscillator->set_frequency(frequency);
 }
 
 /**
@@ -101,7 +103,8 @@ void audio_set_frequency(float frequency) {
  */
 EMSCRIPTEN_KEEPALIVE
 int audio_set_waveform(int waveform) {
-    if (waveform < 0 || waveform > 3) return -1;
+    if (waveform < 0 || waveform > 3)
+        return -1;
     if (g_oscillator) {
         g_oscillator->set_waveform(static_cast<sonicforge::Waveform>(waveform));
     }
@@ -120,4 +123,4 @@ void audio_destroy() {
     g_oscillator = nullptr;
 }
 
-} // extern "C"
+}  // extern "C"

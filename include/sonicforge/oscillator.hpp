@@ -102,8 +102,7 @@ public:
      *        Non-positive frequency or sample_rate values are replaced by
      *        their respective defaults (440 Hz / 48000 Hz).
      */
-    explicit Oscillator(Waveform waveform = Waveform::SINE,
-                        float frequency = 440.0F,
+    explicit Oscillator(Waveform waveform = Waveform::SINE, float frequency = 440.0F,
                         float sample_rate = 48000.0F);
 
     /**

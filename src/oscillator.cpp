@@ -31,11 +31,10 @@ constexpr std::size_t SINE_LUT_SIZE = 4096;
 /// accurate as a 32-bit float allows.
 const std::array<float, SINE_LUT_SIZE> SINE_LUT = []() noexcept {
     std::array<float, SINE_LUT_SIZE> tbl{};
-    constexpr double TWO_PI_D = 2.0 * 3.14159265358979323846;
+    constexpr double two_pi_d = 2.0 * 3.14159265358979323846;
     for (std::size_t i = 0; i < SINE_LUT_SIZE; ++i) {
         tbl[i] = static_cast<float>(
-            std::sin(static_cast<double>(i) * TWO_PI_D /
-                     static_cast<double>(SINE_LUT_SIZE)));
+            std::sin(static_cast<double>(i) * two_pi_d / static_cast<double>(SINE_LUT_SIZE)));
     }
     return tbl;
 }();
@@ -86,8 +85,7 @@ const std::array<float, SINE_LUT_SIZE> SINE_LUT = []() noexcept {
  * (e.g. from an uninitialised variable or deserialisation error).
  */
 [[nodiscard]] constexpr bool is_valid_waveform(sonicforge::Waveform w) noexcept {
-    return static_cast<uint8_t>(w) <=
-           static_cast<uint8_t>(sonicforge::Waveform::TRIANGLE);
+    return static_cast<uint8_t>(w) <= static_cast<uint8_t>(sonicforge::Waveform::TRIANGLE);
 }
 
 }  // anonymous namespace
@@ -99,8 +97,8 @@ namespace sonicforge {
 // =============================================================================
 
 Oscillator::Oscillator(Waveform waveform, float frequency, float sample_rate)
-    : phase_{0.0F},
-      // Clamp invalid inputs to safe defaults at construction time
+    :  // Clamp invalid inputs to safe defaults at construction time.
+       // phase_ uses the in-class default (0.0F); no need to repeat it here.
       frequency_{(frequency > 0.0F) ? frequency : 440.0F},
       sample_rate_{(sample_rate > 0.0F) ? sample_rate : 48000.0F},
       // Silently fall back to SINE for any out-of-range enum value
@@ -121,7 +119,8 @@ Oscillator::Oscillator(Waveform waveform, float frequency, float sample_rate)
  * set_waveform(), so the uint8_t cast is always in [0, 3].
  */
 Oscillator::GeneratorFn Oscillator::resolve_generator(Waveform wf) noexcept {
-    static const GeneratorFn TABLE[] = {
+    // Use std::array to avoid the cppcoreguidelines-avoid-c-arrays warning.
+    static const std::array<GeneratorFn, 4> TABLE = {
         &Oscillator::generate_sine,      // 0 — SINE
         &Oscillator::generate_saw,       // 1 — SAW
         &Oscillator::generate_square,    // 2 — SQUARE
@@ -135,8 +134,7 @@ Oscillator::GeneratorFn Oscillator::resolve_generator(Waveform wf) noexcept {
 // =============================================================================
 
 float Oscillator::process() noexcept {
-    const GeneratorFn gen =
-        resolve_generator(waveform_.load(std::memory_order_relaxed));
+    const GeneratorFn gen = resolve_generator(waveform_.load(std::memory_order_relaxed));
     const float output = (this->*gen)();
     advance_phase();
     return output;
@@ -149,8 +147,7 @@ void Oscillator::process_block(float* buffer, std::size_t num_samples) noexcept 
 
     // Resolve the waveform once for the whole block — avoids a per-sample
     // atomic load and repeated indirect-branch prediction inside the loop.
-    const GeneratorFn gen =
-        resolve_generator(waveform_.load(std::memory_order_relaxed));
+    const GeneratorFn gen = resolve_generator(waveform_.load(std::memory_order_relaxed));
 
     for (std::size_t i = 0U; i < num_samples; ++i) {
         buffer[i] = (this->*gen)();
@@ -170,12 +167,12 @@ float Oscillator::generate_sine() const noexcept {
     // interpolate between the two bounding table entries.
     //
     // Peak error vs std::sin: ~2.3e-6 (≈ −113 dB) — well below 16-bit audio.
-    constexpr float LUT_SCALE = static_cast<float>(SINE_LUT_SIZE);
-    const float pos = phase_ * LUT_SCALE;
+    constexpr auto lut_scale = static_cast<float>(SINE_LUT_SIZE);
+    const float pos = phase_ * lut_scale;
     const auto idx0 = static_cast<std::size_t>(pos);
     const float frac = pos - static_cast<float>(idx0);
     const std::size_t idx1 = (idx0 + 1U) & (SINE_LUT_SIZE - 1U);  // wrap
-    return SINE_LUT[idx0] + frac * (SINE_LUT[idx1] - SINE_LUT[idx0]);
+    return SINE_LUT[idx0] + (frac * (SINE_LUT[idx1] - SINE_LUT[idx0]));
 }
 
 float Oscillator::generate_saw() const noexcept {
@@ -190,8 +187,7 @@ float Oscillator::generate_saw() const noexcept {
     //   ≈ +1 at t→1  (just before wrap)    → lowers the high pre-wrap value
     // This smoothly connects the two sides through 0, eliminating the step.
     const float dt =
-        frequency_.load(std::memory_order_relaxed) /
-        sample_rate_.load(std::memory_order_relaxed);
+        frequency_.load(std::memory_order_relaxed) / sample_rate_.load(std::memory_order_relaxed);
     return ((2.0F * phase_) - 1.0F) - poly_blep(phase_, dt);
 }
 
@@ -207,8 +203,7 @@ float Oscillator::generate_square() const noexcept {
     // The two correction regions never overlap for dt ≤ 0.5, which is
     // guaranteed because set_frequency() clamps frequency to Nyquist.
     const float dt =
-        frequency_.load(std::memory_order_relaxed) /
-        sample_rate_.load(std::memory_order_relaxed);
+        frequency_.load(std::memory_order_relaxed) / sample_rate_.load(std::memory_order_relaxed);
 
     float naive = (phase_ < 0.5F) ? 1.0F : -1.0F;
 
@@ -270,8 +265,7 @@ void Oscillator::set_frequency(float frequency) noexcept {
     // on the next set_frequency() call.
     const float sr = sample_rate_.load(std::memory_order_relaxed);
     const float nyquist = sr * 0.5F;
-    frequency_.store(std::clamp(frequency, 0.1F, nyquist),
-                     std::memory_order_relaxed);
+    frequency_.store(std::clamp(frequency, 0.1F, nyquist), std::memory_order_relaxed);
 }
 
 void Oscillator::set_waveform(Waveform waveform) noexcept {

@@ -51,6 +51,11 @@ CheckOptions:
     value: UPPER_CASE
   - key: readability-identifier-naming.StaticConstantCase
     value: UPPER_CASE
+  # Local const variables use lower_case (only global/static consts use UPPER_CASE)
+  - key: readability-identifier-naming.LocalConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.LocalConstantPointerCase
+    value: lower_case
   - key: readability-identifier-naming.PrivateMemberSuffix
     value: '_'
   - key: readability-identifier-naming.ProtectedMemberSuffix

@@ -25,7 +25,9 @@
 #include <sonicforge/oscillator.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -34,12 +36,19 @@
 // Minimal Test Framework
 // =============================================================================
 
+namespace {
+
 struct TestResult {
     std::string name;
     bool passed;
 };
 
-std::vector<TestResult> g_results;
+// Use a function-local static to avoid a non-const global variable
+// (cppcoreguidelines-avoid-non-const-global-variables).
+std::vector<TestResult>& test_results() {
+    static std::vector<TestResult> results;
+    return results;
+}
 
 /** Check if two floats are approximately equal within an absolute epsilon. */
 bool approx_equal(float a, float b, float epsilon = 1e-5F) {
@@ -49,7 +58,7 @@ bool approx_equal(float a, float b, float epsilon = 1e-5F) {
 /** Run a named test function and record the result. */
 void run_test(const std::string& name, bool (*test_func)()) {
     const bool passed = test_func();
-    g_results.push_back({name, passed});
+    test_results().push_back({name, passed});
 
     if (passed) {
         std::cout << "  OK  " << name << "\n";
@@ -63,7 +72,7 @@ int summarize() {
     int passed = 0;
     int failed = 0;
 
-    for (const auto& result : g_results) {
+    for (const auto& result : test_results()) {
         if (result.passed) {
             ++passed;
         } else {
@@ -85,24 +94,30 @@ int summarize() {
 // =============================================================================
 
 bool test_default_construction() {
-    sonicforge::Oscillator osc;
+    const sonicforge::Oscillator osc;
 
-    if (!approx_equal(osc.get_frequency(), 440.0F, 0.001F)) return false;
-    if (!approx_equal(osc.get_sample_rate(), 48000.0F, 0.001F)) return false;
-    if (osc.get_waveform() != sonicforge::Waveform::SINE) return false;
-    if (!approx_equal(osc.get_phase(), 0.0F, 0.001F)) return false;
-
-    return true;
+    if (!approx_equal(osc.get_frequency(), 440.0F, 0.001F)) {
+        return false;
+    }
+    if (!approx_equal(osc.get_sample_rate(), 48000.0F, 0.001F)) {
+        return false;
+    }
+    if (osc.get_waveform() != sonicforge::Waveform::SINE) {
+        return false;
+    }
+    return approx_equal(osc.get_phase(), 0.0F, 0.001F);
 }
 
 bool test_custom_construction() {
-    sonicforge::Oscillator osc(sonicforge::Waveform::SAW, 880.0F, 44100.0F);
+    const sonicforge::Oscillator osc(sonicforge::Waveform::SAW, 880.0F, 44100.0F);
 
-    if (!approx_equal(osc.get_frequency(), 880.0F, 0.001F)) return false;
-    if (!approx_equal(osc.get_sample_rate(), 44100.0F, 0.001F)) return false;
-    if (osc.get_waveform() != sonicforge::Waveform::SAW) return false;
-
-    return true;
+    if (!approx_equal(osc.get_frequency(), 880.0F, 0.001F)) {
+        return false;
+    }
+    if (!approx_equal(osc.get_sample_rate(), 44100.0F, 0.001F)) {
+        return false;
+    }
+    return osc.get_waveform() == sonicforge::Waveform::SAW;
 }
 
 /**
@@ -112,22 +127,20 @@ bool test_custom_construction() {
  * an out-of-range value simulates corrupted / deserialised data.
  */
 bool test_invalid_waveform_construction() {
+    // Intentional out-of-range cast to test validation logic.
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     const auto invalid = static_cast<sonicforge::Waveform>(42U);
-    sonicforge::Oscillator osc(invalid, 440.0F);
-
-    // Must fall back to SINE, not produce undefined behaviour
+    const sonicforge::Oscillator osc(invalid, 440.0F);
     return osc.get_waveform() == sonicforge::Waveform::SINE;
 }
 
 bool test_invalid_frequency_construction() {
-    // Non-positive frequency must be replaced by the 440 Hz default
-    sonicforge::Oscillator osc_neg(sonicforge::Waveform::SINE, -100.0F);
-    if (!approx_equal(osc_neg.get_frequency(), 440.0F, 0.001F)) return false;
-
-    sonicforge::Oscillator osc_zero(sonicforge::Waveform::SINE, 0.0F);
-    if (!approx_equal(osc_zero.get_frequency(), 440.0F, 0.001F)) return false;
-
-    return true;
+    const sonicforge::Oscillator osc_neg(sonicforge::Waveform::SINE, -100.0F);
+    if (!approx_equal(osc_neg.get_frequency(), 440.0F, 0.001F)) {
+        return false;
+    }
+    const sonicforge::Oscillator osc_zero(sonicforge::Waveform::SINE, 0.0F);
+    return approx_equal(osc_zero.get_frequency(), 440.0F, 0.001F);
 }
 
 // =============================================================================
@@ -168,7 +181,6 @@ bool test_square_output_range() {
 
     for (int i = 0; i < 48000; ++i) {
         const float sample = osc.process();
-        // Allow a tiny floating-point epsilon beyond the hard bounds
         if (sample < -1.0F - 1e-6F || sample > 1.0F + 1e-6F) {
             return false;
         }
@@ -194,17 +206,13 @@ bool test_triangle_output_range() {
 
 bool test_sine_starts_at_zero() {
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0F);
-
-    // sin(0) == 0; the very first sample must be ~0
-    const float first_sample = osc.process();
-    return approx_equal(first_sample, 0.0F, 0.001F);
+    return approx_equal(osc.process(), 0.0F, 0.001F);
 }
 
 /**
  * The sine peak should occur at phase = 0.25 (one quarter of the period).
- *
- * At 480 Hz / 48 kHz the period is exactly 100 samples, so the peak
- * falls around sample 25.
+ * At 480 Hz / 48 kHz the period is exactly 100 samples, so the peak falls
+ * around sample index 25.
  */
 bool test_sine_peak_position() {
     constexpr float frequency = 480.0F;
@@ -223,10 +231,10 @@ bool test_sine_peak_position() {
         }
     }
 
-    if (!approx_equal(max_sample, 1.0F, 0.01F)) return false;
-    if (max_index < 24U || max_index > 26U) return false;
-
-    return true;
+    if (!approx_equal(max_sample, 1.0F, 0.01F)) {
+        return false;
+    }
+    return max_index >= 24U && max_index <= 26U;
 }
 
 // =============================================================================
@@ -237,24 +245,22 @@ bool test_set_frequency() {
     sonicforge::Oscillator osc;
 
     osc.set_frequency(1000.0F);
-    if (!approx_equal(osc.get_frequency(), 1000.0F, 0.001F)) return false;
-
+    if (!approx_equal(osc.get_frequency(), 1000.0F, 0.001F)) {
+        return false;
+    }
     osc.set_frequency(100.0F);
-    if (!approx_equal(osc.get_frequency(), 100.0F, 0.001F)) return false;
-
-    return true;
+    return approx_equal(osc.get_frequency(), 100.0F, 0.001F);
 }
 
 bool test_set_waveform() {
     sonicforge::Oscillator osc;
 
     osc.set_waveform(sonicforge::Waveform::SQUARE);
-    if (osc.get_waveform() != sonicforge::Waveform::SQUARE) return false;
-
+    if (osc.get_waveform() != sonicforge::Waveform::SQUARE) {
+        return false;
+    }
     osc.set_waveform(sonicforge::Waveform::TRIANGLE);
-    if (osc.get_waveform() != sonicforge::Waveform::TRIANGLE) return false;
-
-    return true;
+    return osc.get_waveform() == sonicforge::Waveform::TRIANGLE;
 }
 
 /**
@@ -263,30 +269,27 @@ bool test_set_waveform() {
  */
 bool test_set_waveform_invalid() {
     sonicforge::Oscillator osc(sonicforge::Waveform::SAW, 440.0F);
-
+    // Intentional out-of-range cast to test validation logic.
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     const auto invalid = static_cast<sonicforge::Waveform>(200U);
     osc.set_waveform(invalid);
-
-    // Must remain SAW; must not change to SINE or anything else
     return osc.get_waveform() == sonicforge::Waveform::SAW;
 }
 
 bool test_phase_reset() {
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0F);
 
-    // Advance the phase
     for (int i = 0; i < 100; ++i) {
         (void)osc.process();
     }
-
-    if (osc.get_phase() <= 0.0F) return false;
-
+    if (osc.get_phase() <= 0.0F) {
+        return false;
+    }
     osc.reset_phase();
-    if (!approx_equal(osc.get_phase(), 0.0F, 0.0001F)) return false;
-
-    // Next sample after reset: sin(0) == 0
-    const float sample = osc.process();
-    return approx_equal(sample, 0.0F, 0.001F);
+    if (!approx_equal(osc.get_phase(), 0.0F, 0.0001F)) {
+        return false;
+    }
+    return approx_equal(osc.process(), 0.0F, 0.001F);
 }
 
 // =============================================================================
@@ -297,14 +300,14 @@ bool test_block_processing() {
     sonicforge::Oscillator osc1(sonicforge::Waveform::SINE, 440.0F);
     sonicforge::Oscillator osc2(sonicforge::Waveform::SINE, 440.0F);
 
-    constexpr std::size_t BLOCK_SIZE = 256U;
-    float block_buffer[BLOCK_SIZE];
+    constexpr std::size_t block_size = 256U;
+    std::array<float, block_size> block_buffer{};
 
-    osc1.process_block(block_buffer, BLOCK_SIZE);
+    osc1.process_block(block_buffer.data(), block_size);
 
-    for (std::size_t i = 0U; i < BLOCK_SIZE; ++i) {
-        const float single_sample = osc2.process();
-        if (!approx_equal(block_buffer[i], single_sample, 0.00001F)) {
+    for (const float expected : block_buffer) {
+        const float actual = osc2.process();
+        if (!approx_equal(expected, actual, 0.00001F)) {
             return false;
         }
     }
@@ -317,16 +320,13 @@ bool test_phase_wrapping() {
 
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, frequency, sample_rate);
 
-    const std::size_t samples_per_cycle =
-        static_cast<std::size_t>(sample_rate / frequency);
-
+    const auto samples_per_cycle = static_cast<std::size_t>(sample_rate / frequency);
     for (std::size_t i = 0U; i < samples_per_cycle; ++i) {
         (void)osc.process();
     }
 
-    // After one full cycle the phase should be close to 0 again
     const float phase = osc.get_phase();
-    return (phase < 0.01F || phase > 0.99F);
+    return phase < 0.01F || phase > 0.99F;
 }
 
 // =============================================================================
@@ -335,28 +335,20 @@ bool test_phase_wrapping() {
 
 /**
  * A PolyBLEP-corrected sawtooth must not produce the large instantaneous jump
- * (~2.0) of the naive implementation.  Instead, each consecutive sample
- * difference must stay below 1.5 at any frequency.
- *
- * This tests at a high frequency (4800 Hz at 48 kHz, dt = 0.1) where the
- * aliasing from a naive saw is severe — and at a low frequency (100 Hz) where
- * the phase increment is small.
+ * (~2.0) of the naive implementation.  Each consecutive sample difference must
+ * stay below 1.5 at all tested frequencies.
  */
 bool test_saw_polyblep_smoothing() {
     constexpr float sr = 48000.0F;
 
     for (const float freq : {100.0F, 1000.0F, 4800.0F}) {
         sonicforge::Oscillator osc(sonicforge::Waveform::SAW, freq, sr);
-
         float prev = osc.process();
 
-        // Two full cycles is enough to observe several wrap-around transitions
         const int samples = static_cast<int>(2.0F * sr / freq);
         for (int i = 0; i < samples; ++i) {
             const float cur = osc.process();
-            const float delta = std::fabs(cur - prev);
-            // Naive saw would jump ~2.0; PolyBLEP must reduce this below 1.5
-            if (delta > 1.5F) {
+            if (std::fabs(cur - prev) > 1.5F) {
                 return false;
             }
             prev = cur;
@@ -366,25 +358,20 @@ bool test_saw_polyblep_smoothing() {
 }
 
 /**
- * The PolyBLEP square wave must have smooth transitions at its two
- * discontinuity points (phase = 0 and phase = 0.5).  Near those points the
- * output should pass through intermediate values, not jump instantly.
- *
- * We verify this by asserting that consecutive sample deltas never exceed 1.5.
+ * The PolyBLEP square wave must have smooth transitions at both discontinuity
+ * points.  Consecutive sample deltas must never exceed 1.5.
  */
 bool test_square_polyblep_smoothing() {
     constexpr float sr = 48000.0F;
 
     for (const float freq : {100.0F, 1000.0F, 4800.0F}) {
         sonicforge::Oscillator osc(sonicforge::Waveform::SQUARE, freq, sr);
-
         float prev = osc.process();
 
         const int samples = static_cast<int>(2.0F * sr / freq);
         for (int i = 0; i < samples; ++i) {
             const float cur = osc.process();
-            const float delta = std::fabs(cur - prev);
-            if (delta > 1.5F) {
+            if (std::fabs(cur - prev) > 1.5F) {
                 return false;
             }
             prev = cur;
@@ -399,39 +386,35 @@ bool test_square_polyblep_smoothing() {
 
 /**
  * The 4096-entry LUT with linear interpolation should produce sine values
- * within 1e-4 of std::sin for all phase positions.
- *
- * Expected peak error: ~2.3e-6 (≈ −113 dB); we use 1e-4 as a generous
- * tolerance to be robust against compiler variations.
+ * within 1e-4 of std::sin.  Expected peak error is ~2.3e-6 (≈ −113 dB);
+ * we use 1e-4 as a generous tolerance for compiler variation.
  */
 bool test_sine_lut_accuracy() {
-    // 480 Hz / 48 kHz → dt = 0.01 → exactly 100 samples per cycle.
-    // This gives a dense and even coverage of the LUT.
     constexpr float frequency = 480.0F;
     constexpr float sample_rate = 48000.0F;
-    constexpr float dt = frequency / sample_rate;  // 0.01
-    constexpr float TWO_PI = 2.0F * 3.14159265358979323846F;
+    constexpr float dt = frequency / sample_rate;
+    constexpr float two_pi = 2.0F * 3.14159265358979323846F;
 
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, frequency, sample_rate);
 
     float max_error = 0.0F;
-    float reference_phase = 0.0F;
+    float ref_phase = 0.0F;
 
-    // Two full cycles (200 samples)
     for (int i = 0; i < 200; ++i) {
         const float lut_sample = osc.process();
-        const float ref_sample = std::sin(TWO_PI * reference_phase);
-        const float error = std::fabs(lut_sample - ref_sample);
-        max_error = std::max(max_error, error);
+        const float ref_sample = std::sin(two_pi * ref_phase);
+        max_error = std::max(max_error, std::fabs(lut_sample - ref_sample));
 
-        reference_phase += dt;
-        if (reference_phase >= 1.0F) {
-            reference_phase -= 1.0F;
+        ref_phase += dt;
+        if (ref_phase >= 1.0F) {
+            ref_phase -= 1.0F;
         }
     }
 
     return max_error < 1e-4F;
 }
+
+}  // anonymous namespace
 
 // =============================================================================
 // Main
