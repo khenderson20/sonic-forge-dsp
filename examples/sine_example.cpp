@@ -36,7 +36,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
-#include <string>   // <-- added this for std::stof
+#include <string>// <-- added this for std::stof
 
 /**
  * @brief Simple program to generate and output a sine wave
