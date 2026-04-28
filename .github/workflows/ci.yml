@@ -98,6 +98,10 @@ jobs:
           key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
           restore-keys: cpm-${{ runner.os }}-
 
+      - name: Prepare CPM cache dir
+        if: runner.os != 'Windows'
+        run: mkdir -p ~/.cache/CPM/cpm
+
       # ── Linux: install Clang-18 if needed ─────────────────────────
       - name: Install Clang-18 (Linux)
         if: runner.os == 'Linux' && matrix.compiler == 'clang'
@@ -201,6 +205,10 @@ jobs:
           path: ~/.cache/CPM
           key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
           restore-keys: cpm-${{ runner.os }}-
+
+      - name: Prepare CPM cache dir
+        if: runner.os != 'Windows'
+        run: mkdir -p ~/.cache/CPM/cpm
 
       - name: Install Clang-18 toolchain
         run: |
