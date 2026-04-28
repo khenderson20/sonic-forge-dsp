@@ -78,8 +78,10 @@ class SonicForgeApp {
   constructor() {
     // Audio
     this.audioCtx   = null;
+    this.gainNode   = null;
     this.worklet    = null;
     this.started    = false;
+    this.muted      = false;
     this.freq       = 440;
     this.wave       = 0;          // 0=sine,1=saw,2=square,3=tri
     this.decay      = 0;          // 0–100 (percentage)
@@ -330,6 +332,8 @@ class SonicForgeApp {
 
     try {
       this.audioCtx = new AudioContext();
+      this.gainNode = this.audioCtx.createGain();
+      this.gainNode.gain.value = this.muted ? 0 : 1;
       const resp = await fetch('sonicforge.wasm');
       if (!resp.ok) throw new Error(`Wasm fetch failed (${resp.status})`);
       const wasm = await resp.arrayBuffer();
@@ -340,75 +344,114 @@ class SonicForgeApp {
       });
       this.worklet.port.postMessage({ type: 'init-wasm', wasmBinary: wasm }, [wasm]);
 
-      this.worklet.port.onmessage = ({ data }) => {
-        if (data.type === 'ready') {
-          this.worklet.port.postMessage({ type: 'init', waveform: this.wave, frequency: this.freq });
-          btn.textContent = 'Audio Running';
-          btn.disabled = false;
-        } else if (data.type === 'error') {
-          this._onAudioError(`Worklet error: ${data.message}`, btn);
-        }
-      };
+       this.worklet.port.onmessage = ({ data }) => {
+         if (data.type === 'ready') {
+           this.worklet.port.postMessage({ type: 'init', waveform: this.wave, frequency: this.freq });
+           btn.textContent = 'Audio Running';
+           btn.disabled = false;
+           // Show stop and mute buttons, hide start button
+           $('stop-btn').style.display = 'inline-block';
+           $('mute-btn').style.display = 'inline-block';
+           btn.style.display = 'none';
+         } else if (data.type === 'error') {
+           this._onAudioError(`Worklet error: ${data.message}`, btn);
+         }
+       };
 
-      this.worklet.connect(this.audioCtx.destination);
+      this.worklet.connect(this.gainNode);
+      this.gainNode.connect(this.audioCtx.destination);
       this.started = true;
     } catch (err) {
       this._onAudioError(err.message, btn);
     }
   }
 
-  _onAudioError(message, btn) {
-    console.error('[SonicForge]', message);
-    btn.textContent = 'Retry';
-    btn.disabled = false;
-    btn.onclick = () => {
-      btn.onclick = null;
-      this._startAudio();
-    };
-  }
+   _onAudioError(message, btn) {
+     console.error('[SonicForge]', message);
+     btn.textContent = 'Retry';
+     btn.disabled = false;
+     btn.onclick = () => {
+       btn.onclick = null;
+       this._startAudio();
+     };
+   }
 
-  /* ── UI wiring ───────────────────────────────────────────────── */
-  _wireUI() {
-    $('start-btn').addEventListener('click', () => this._startAudio());
+   /* ── Audio stop ──────────────────────────────────────────────── */
+   _stopAudio() {
+     if (!this.audioCtx) return;
+     this.worklet.disconnect();
+     this.gainNode.disconnect();
+     this.audioCtx.close();
+     this.audioCtx = null;
+     this.gainNode = null;
+     this.worklet = null;
+     this.started = false;
 
-    $('freq-slider').addEventListener('input', (e) => {
-      // Clamp to the slider's own range [40, 1200] Hz — defence-in-depth
-      // before the value reaches the AudioWorklet / C++ layer.
-      const freq = clampFinite(e.target.value, 40, 1200, 440);
-      this.freq = freq;
-      $('freq-val').textContent = `${freq} Hz`;
-      $('r-freq').textContent   = `${freq} Hz`;
-      if (this.worklet) this.worklet.port.postMessage({ type: 'frequency', value: freq });
-    });
+     const startBtn = $('start-btn');
+     const stopBtn = $('stop-btn');
+     const muteBtn = $('mute-btn');
+     startBtn.textContent = 'Start Audio';
+     startBtn.style.display = 'inline-block';
+     stopBtn.style.display = 'none';
+     muteBtn.style.display = 'none';
+     muteBtn.classList.remove('muted');
+     this.muted = false;
+   }
 
-    $('decay-slider').addEventListener('input', (e) => {
-      const decay = clampFinite(e.target.value, 0, 100, 0);
-      this.decay = decay;
-      $('decay-val').textContent = `${decay}%`;
-      $('r-decay').textContent   = `${decay}%`;
-      this._rebuildWaveData();
-    });
+   /* ── Toggle mute ────────────────────────────────────────────── */
+   _toggleMute() {
+     if (!this.gainNode) return;
+     this.muted = !this.muted;
+     this.gainNode.gain.value = this.muted ? 0 : 1;
+     const muteBtn = $('mute-btn');
+     muteBtn.classList.toggle('muted', this.muted);
+     muteBtn.innerHTML = this.muted ? '&#128263;' : '&#128266;';
+   }
 
-    $('harm-slider').addEventListener('input', (e) => {
-      const harm = Math.round(clampFinite(e.target.value, 1, 16, 1));
-      this.harmonics = harm;
-      $('harm-val').textContent = harm;
-      this._rebuildWaveData();
-    });
+   /* ── UI wiring ───────────────────────────────────────────────── */
+   _wireUI() {
+     $('start-btn').addEventListener('click', () => this._startAudio());
+     $('stop-btn').addEventListener('click', () => this._stopAudio());
+     $('mute-btn').addEventListener('click', () => this._toggleMute());
 
-    document.querySelectorAll('.wbtn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        // Clamp waveform index to the four valid values [0, 3]
-        const wave = clampFinite(Number(btn.dataset.wave), 0, 3, 0);
-        this.wave = Math.round(wave);
-        document.querySelectorAll('.wbtn').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        $('r-wave').textContent = ['Sine', 'Saw', 'Square', 'Triangle'][this.wave];
-        if (this.worklet) this.worklet.port.postMessage({ type: 'waveform', value: this.wave });
-        this._rebuildWaveData();
-      });
-    });
-  }
+     $('freq-slider').addEventListener('input', (e) => {
+       // Clamp to the slider's own range [40, 1200] Hz — defence-in-depth
+       // before the value reaches the AudioWorklet / C++ layer.
+       const freq = clampFinite(e.target.value, 40, 1200, 440);
+       this.freq = freq;
+       $('freq-val').textContent = `${freq} Hz`;
+       $('r-freq').textContent   = `${freq} Hz`;
+       if (this.worklet) this.worklet.port.postMessage({ type: 'frequency', value: freq });
+     });
+
+     $('decay-slider').addEventListener('input', (e) => {
+       const decay = clampFinite(e.target.value, 0, 100, 0);
+       this.decay = decay;
+       $('decay-val').textContent = `${decay}%`;
+       $('r-decay').textContent   = `${decay}%`;
+       this._rebuildWaveData();
+     });
+
+     $('harm-slider').addEventListener('input', (e) => {
+       const harm = Math.round(clampFinite(e.target.value, 1, 16, 1));
+       this.harmonics = harm;
+       $('harm-val').textContent = harm;
+       this._rebuildWaveData();
+     });
+
+     document.querySelectorAll('.wbtn').forEach((btn) => {
+       btn.addEventListener('click', () => {
+         // Clamp waveform index to the four valid values [0, 3]
+         const wave = clampFinite(Number(btn.dataset.wave), 0, 3, 0);
+         this.wave = Math.round(wave);
+         document.querySelectorAll('.wbtn').forEach((b) => b.classList.remove('active'));
+         btn.classList.add('active');
+         $('r-wave').textContent = ['Sine', 'Saw', 'Square', 'Triangle'][this.wave];
+         if (this.worklet) this.worklet.port.postMessage({ type: 'waveform', value: this.wave });
+         this._rebuildWaveData();
+       });
+     });
+   }
 
   /* ── Render loop ─────────────────────────────────────────────── */
   _tick() {

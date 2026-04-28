@@ -79,6 +79,35 @@
         }
         #start-btn:hover { background: #5ee0d7; }
         #start-btn:disabled { opacity: 0.4; cursor: default; }
+        #stop-btn {
+            background: #ff6b6b;
+            color: #06060a;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: none;
+        }
+        #stop-btn:hover { background: #ff8e8e; }
+        #stop-btn:disabled { opacity: 0.4; cursor: default; }
+        #mute-btn {
+            background: transparent;
+            color: #58586a;
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            line-height: 1;
+            display: none;
+        }
+        #mute-btn:hover { border-color: #4ecdc4; color: #4ecdc4; }
+        #mute-btn.muted { border-color: #ff6b6b; color: #ff6b6b; }
 
         .sep { width: 1px; height: 36px; background: rgba(255,255,255,0.06); }
 
@@ -209,16 +238,18 @@
         <div class="item"><span class="swatch" style="background:#383850"></span>Zero crossing</div>
     </div>
 
-    <div id="controls">
-        <button id="start-btn">Start Audio</button>
-        <div class="sep"></div>
-        <div class="ctrl">
-            <label>Decay</label>
-            <div class="row">
-                <input type="range" id="decay-slider" min="0" max="100" value="0">
-                <span class="val" id="decay-val">0%</span>
-            </div>
-        </div>
+     <div id="controls">
+         <button id="start-btn">Start Audio</button>
+         <button id="stop-btn" style="display: none;">Stop Audio</button>
+         <button id="mute-btn" aria-label="Toggle mute" title="Mute audio">&#128266;</button>
+         <div class="sep"></div>
+         <div class="ctrl">
+             <label>Decay</label>
+             <div class="row">
+                 <input type="range" id="decay-slider" min="0" max="100" value="0">
+                 <span class="val" id="decay-val">0%</span>
+             </div>
+         </div>
         <div class="ctrl">
             <label>Harmonics</label>
             <div class="row">
