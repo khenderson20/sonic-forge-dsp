@@ -9,119 +9,167 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
             background: #06060a;
             color: #c8c8d8;
             font-family: 'Inter', sans-serif;
             overflow: hidden;
         }
+
         #canvas-container { width: 100vw; height: 100vh; display: block; }
 
-        /* ── Top-left readout ──────────────────────────────────── */
+        /* ── Shared panel chrome ───────────────────────────────────── */
+        .panel {
+            background: rgba(6, 6, 10, 0.86);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.055);
+            border-radius: 11px;
+        }
+
+        /* ── Top-left readout ──────────────────────────────────────── */
         #readout {
             position: absolute;
             top: 20px;
             left: 20px;
-            background: rgba(6, 6, 10, 0.88);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 10px;
-            padding: 16px 20px;
+            padding: 0;
             z-index: 10;
             pointer-events: none;
-            min-width: 200px;
+            min-width: 210px;
+            overflow: hidden;
         }
+
+        /* Coloured top accent strip */
+        #readout::before {
+            content: '';
+            display: block;
+            height: 3px;
+            background: linear-gradient(90deg, #4cd9c8 0%, #8b7ef8 55%, #e8975a 100%);
+            border-radius: 11px 11px 0 0;
+        }
+
+        #readout-inner {
+            padding: 14px 18px 16px;
+        }
+
         #readout h1 {
-            font-size: 0.78rem;
+            font-size: 0.72rem;
             font-weight: 600;
-            letter-spacing: 0.06em;
-            color: #4ecdc4;
+            letter-spacing: 0.09em;
+            color: #4cd9c8;
             text-transform: uppercase;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
+
         .metric {
             display: flex;
             justify-content: space-between;
+            gap: 16px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7rem;
+            font-size: 0.68rem;
             padding: 2px 0;
-            color: #707088;
+            color: #545468;
         }
-        .metric .v { color: #d0d0e0; }
 
-        /* ── Bottom control bar ────────────────────────────────── */
+        .metric .v {
+            color: #c8c8dc;
+            text-align: right;
+        }
+
+        .metric-sep {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.05);
+            margin: 8px 0 6px;
+        }
+
+        /* ── Bottom control bar ────────────────────────────────────── */
         #controls {
             position: absolute;
             bottom: 24px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(6, 6, 10, 0.88);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 12px;
-            padding: 14px 28px;
+            padding: 14px 24px;
             display: flex;
             align-items: center;
-            gap: 28px;
+            gap: 20px;
             z-index: 10;
         }
-        #start-btn {
-            background: #4ecdc4;
+
+        /* Primary action buttons */
+        .btn-primary {
+            background: #4cd9c8;
             color: #06060a;
             border: none;
-            padding: 10px 24px;
+            padding: 9px 22px;
             border-radius: 8px;
             font-family: 'Inter', sans-serif;
             font-weight: 600;
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             cursor: pointer;
-            transition: background 0.15s;
+            transition: background 0.14s;
+            white-space: nowrap;
         }
-        #start-btn:hover { background: #5ee0d7; }
-        #start-btn:disabled { opacity: 0.4; cursor: default; }
+        .btn-primary:hover    { background: #5ee8d6; }
+        .btn-primary:disabled { opacity: 0.38; cursor: default; }
+
         #stop-btn {
-            background: #ff6b6b;
+            background: #e85a5a;
             color: #06060a;
             border: none;
-            padding: 10px 24px;
+            padding: 9px 22px;
             border-radius: 8px;
             font-family: 'Inter', sans-serif;
             font-weight: 600;
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             cursor: pointer;
-            transition: background 0.15s;
+            transition: background 0.14s;
             display: none;
+            white-space: nowrap;
         }
-        #stop-btn:hover { background: #ff8e8e; }
-        #stop-btn:disabled { opacity: 0.4; cursor: default; }
-        #mute-btn {
+        #stop-btn:hover { background: #f07070; }
+
+        /* Icon / ghost buttons */
+        .btn-ghost {
             background: transparent;
-            color: #58586a;
-            border: 1px solid rgba(255,255,255,0.08);
-            padding: 8px 14px;
+            color: #545468;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 7px 13px;
             border-radius: 8px;
-            font-size: 1.1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68rem;
             cursor: pointer;
-            transition: all 0.15s;
-            line-height: 1;
-            display: none;
+            transition: border-color 0.13s, color 0.13s;
+            line-height: 1.1;
+            white-space: nowrap;
         }
-        #mute-btn:hover { border-color: #4ecdc4; color: #4ecdc4; }
-        #mute-btn.muted { border-color: #ff6b6b; color: #ff6b6b; }
+        .btn-ghost:hover { border-color: #4cd9c8; color: #4cd9c8; }
+        .btn-ghost:disabled { opacity: 0.28; cursor: default; }
 
-        .sep { width: 1px; height: 36px; background: rgba(255,255,255,0.06); }
+        #mute-btn { font-size: 1.1rem; display: none; }
+        #mute-btn.muted { border-color: #e85a5a; color: #e85a5a; }
+        #mute-btn:hover:not(.muted) { border-color: #4cd9c8; color: #4cd9c8; }
 
+        #live-btn { display: none; }
+        #live-btn:hover { border-color: #8b7ef8; color: #8b7ef8; }
+        #live-btn.active { background: #8b7ef8; color: #06060a; border-color: #8b7ef8; }
+
+        #reset-btn:hover { border-color: #e8975a; color: #e8975a; }
+
+        /* Separator */
+        .sep { width: 1px; height: 34px; background: rgba(255, 255, 255, 0.055); flex-shrink: 0; }
+
+        /* Sliders */
         .ctrl {
             display: flex;
             flex-direction: column;
             gap: 3px;
         }
         .ctrl label {
-            font-size: 0.6rem;
-            font-weight: 500;
-            color: #58586a;
+            font-size: 0.58rem;
+            font-weight: 600;
+            color: #444458;
             text-transform: uppercase;
-            letter-spacing: 0.07em;
+            letter-spacing: 0.09em;
         }
         .ctrl .row {
             display: flex;
@@ -129,7 +177,7 @@
             gap: 8px;
         }
         .ctrl input[type="range"] {
-            width: 80px;
+            width: 82px;
             height: 3px;
             -webkit-appearance: none;
             appearance: none;
@@ -140,60 +188,120 @@
         }
         .ctrl input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 12px; height: 12px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
-            background: #4ecdc4;
+            background: #4cd9c8;
             cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .ctrl input[type="range"]::-webkit-slider-thumb:active {
+            transform: scale(1.3);
         }
         .ctrl .val {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.68rem;
-            color: #8888a0;
-            min-width: 40px;
+            font-size: 0.66rem;
+            color: #7070a0;
+            min-width: 44px;
             text-align: right;
         }
 
+        /* Waveform selector */
         .wave-btns { display: flex; gap: 4px; }
         .wbtn {
             background: transparent;
-            color: #58586a;
-            border: 1px solid rgba(255,255,255,0.08);
-            padding: 5px 12px;
+            color: #545468;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 5px 11px;
             border-radius: 6px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.68rem;
+            font-size: 0.66rem;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: border-color 0.13s, color 0.13s, background 0.13s;
         }
-        .wbtn:hover { border-color: #4ecdc4; color: #4ecdc4; }
-        .wbtn.active { background: #4ecdc4; color: #06060a; border-color: #4ecdc4; }
+        .wbtn:hover { border-color: #4cd9c8; color: #4cd9c8; }
+        .wbtn.active { background: #4cd9c8; color: #06060a; border-color: #4cd9c8; }
 
-        /* ── Legend ────────────────────────────────────────────── */
+        /* ── Legend panel ──────────────────────────────────────────── */
         #legend {
             position: absolute;
             top: 20px;
             right: 20px;
-            background: rgba(6, 6, 10, 0.88);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 10px;
-            padding: 14px 18px;
+            padding: 0;
             z-index: 10;
-            pointer-events: none;
+            min-width: 188px;
+            overflow: hidden;
         }
+
+        #legend::before {
+            content: '';
+            display: block;
+            height: 3px;
+            background: linear-gradient(90deg, #4cd9c8 0%, #8b7ef8 55%, #e8975a 100%);
+            border-radius: 11px 11px 0 0;
+        }
+
+        #legend-inner {
+            padding: 12px 16px 14px;
+        }
+
+        #legend h2 {
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.09em;
+            color: #4a4a60;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        /* Legend items are interactive toggle buttons */
         #legend .item {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 9px;
             font-size: 0.68rem;
             font-family: 'JetBrains Mono', monospace;
-            color: #707088;
-            padding: 2px 0;
+            color: #8888a8;
+            padding: 4px 0;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: color 0.13s, opacity 0.13s;
+            user-select: none;
+            /* Extend click area */
+            margin: 0 -4px;
+            padding-left: 4px;
         }
+        #legend .item:hover  { color: #c0c0d8; }
+        #legend .item.off    { opacity: 0.32; }
+        #legend .item.off .swatch { opacity: 0.4; }
+
         #legend .swatch {
             width: 20px;
             height: 3px;
             border-radius: 2px;
+            flex-shrink: 0;
+            transition: opacity 0.13s;
+        }
+
+        /* Keyboard hint row at bottom of legend */
+        #legend .hint {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.60rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: #383848;
+            display: flex;
+            gap: 8px;
+        }
+        #legend .hint kbd {
+            display: inline-block;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 3px;
+            padding: 1px 5px;
+            font: inherit;
+            color: #5a5a78;
         }
     </style>
 
@@ -207,9 +315,7 @@
     </script>
 
     <!--
-        Fix #8: Subresource Integrity (SRI) for Three.js CDN assets.
-        modulepreload + integrity ensures the browser verifies the hash of each
-        script before execution, preventing CDN-compromise attacks.
+        Subresource Integrity for Three.js CDN assets.
         Hashes are SHA-384 of the exact bytes at the pinned version URL.
     -->
     <link rel="modulepreload"
@@ -224,32 +330,78 @@
 <body>
     <div id="canvas-container"></div>
 
-    <div id="readout">
-        <h1>SonicForge Wavetable</h1>
-        <div class="metric"><span>Base Freq</span><span class="v" id="r-freq">440 Hz</span></div>
-        <div class="metric"><span>Waveform</span><span class="v" id="r-wave">Sine</span></div>
-        <div class="metric"><span>Decay</span><span class="v" id="r-decay">0.0%</span></div>
-        <div class="metric"><span>Slice</span><span class="v" id="r-slice">0 / 32</span></div>
+    <!-- ── Top-left: parameter readout ──────────────────────────── -->
+    <div id="readout" class="panel">
+        <div id="readout-inner">
+            <h1>SonicForge Wavetable</h1>
+            <div class="metric"><span>Frequency</span><span class="v" id="r-freq">440 Hz</span></div>
+            <div class="metric"><span>Waveform</span><span class="v" id="r-wave">Sine</span></div>
+            <div class="metric"><span>Harmonics</span><span class="v" id="r-harm">1</span></div>
+            <div class="metric"><span>Decay</span><span class="v" id="r-decay">0%</span></div>
+            <div class="metric-sep"></div>
+            <div class="metric"><span>DSP Source</span><span class="v" id="r-dsp-source">Loading…</span></div>
+            <div class="metric"><span>Viz Render</span><span class="v" id="r-render-ms">—</span></div>
+        </div>
     </div>
 
-    <div id="legend">
-        <div class="item"><span class="swatch" style="background:#4ecdc4"></span>Waveform amplitude</div>
-        <div class="item"><span class="swatch" style="background:#e06050"></span>Decay envelope</div>
-        <div class="item"><span class="swatch" style="background:#383850"></span>Zero crossing</div>
+    <!-- ── Top-right: interactive legend ────────────────────────── -->
+    <div id="legend" class="panel" aria-label="Legend — click items to toggle visibility">
+        <div id="legend-inner">
+            <h2>Legend</h2>
+
+            <div class="item" data-target="waveform"
+                 title="Toggle waveform ribbon visibility">
+                <span class="swatch" style="background: linear-gradient(90deg, #3de8cf, #5522aa)"></span>
+                Waveform ribbon
+            </div>
+
+            <div class="item" data-target="decay"
+                 title="Toggle decay envelope visibility">
+                <span class="swatch" style="background: #f0625a"></span>
+                Decay envelope
+            </div>
+
+            <div class="item" data-target="zero-ref"
+                 title="Toggle reference grid visibility">
+                <span class="swatch" style="background: #1c2a42; border: 1px solid #2a3a5a"></span>
+                Reference grid
+            </div>
+
+            <div class="item" data-target="peak"
+                 title="Toggle peak-amplitude callout visibility">
+                <span class="swatch" style="background: rgba(255,255,255,0.7); border-radius: 50%; height: 7px; width: 7px; flex-shrink:0; margin: 0 6px 0 6px"></span>
+                Peak callout
+            </div>
+
+            <div class="hint">
+                <span><kbd>R</kbd> reset view</span>
+                <span><kbd>drag</kbd> orbit</span>
+                <span><kbd>scroll</kbd> zoom</span>
+            </div>
+        </div>
     </div>
 
-     <div id="controls">
-         <button id="start-btn">Start Audio</button>
-         <button id="stop-btn" style="display: none;">Stop Audio</button>
-         <button id="mute-btn" aria-label="Toggle mute" title="Mute audio">&#128266;</button>
-         <div class="sep"></div>
-         <div class="ctrl">
-             <label>Decay</label>
-             <div class="row">
-                 <input type="range" id="decay-slider" min="0" max="100" value="0">
-                 <span class="val" id="decay-val">0%</span>
-             </div>
-         </div>
+    <!-- ── Bottom: controls bar ──────────────────────────────────── -->
+    <div id="controls" class="panel">
+        <!-- Audio transport -->
+        <button id="start-btn" class="btn-primary">Start Audio</button>
+        <button id="stop-btn">Stop Audio</button>
+        <button id="mute-btn"  class="btn-ghost" aria-label="Toggle mute" title="Mute / unmute">&#128266;</button>
+        <button id="live-btn"  class="btn-ghost" title="Stream real DSP samples (requires COOP/COEP — use scripts/serve-web.py)">Live: Off</button>
+        <button id="reset-btn" class="btn-ghost" title="Reset camera to default view (R)">⟳ View</button>
+
+        <div class="sep"></div>
+
+        <!-- Decay -->
+        <div class="ctrl">
+            <label>Decay</label>
+            <div class="row">
+                <input type="range" id="decay-slider" min="0" max="100" value="0">
+                <span class="val" id="decay-val">0%</span>
+            </div>
+        </div>
+
+        <!-- Harmonics -->
         <div class="ctrl">
             <label>Harmonics</label>
             <div class="row">
@@ -257,6 +409,8 @@
                 <span class="val" id="harm-val">1</span>
             </div>
         </div>
+
+        <!-- Frequency -->
         <div class="ctrl">
             <label>Frequency</label>
             <div class="row">
@@ -264,20 +418,24 @@
                 <span class="val" id="freq-val">440 Hz</span>
             </div>
         </div>
+
         <div class="sep"></div>
-        <div class="wave-btns">
+
+        <!-- Waveform selector -->
+        <div class="wave-btns" role="group" aria-label="Waveform">
             <button class="wbtn active" data-wave="0">Sine</button>
-            <button class="wbtn" data-wave="1">Saw</button>
-            <button class="wbtn" data-wave="2">Square</button>
-            <button class="wbtn" data-wave="3">Tri</button>
+            <button class="wbtn"       data-wave="1">Saw</button>
+            <button class="wbtn"       data-wave="2">Square</button>
+            <button class="wbtn"       data-wave="3">Tri</button>
         </div>
     </div>
 
     <script type="module" src="main.js"></script>
     <noscript>
-        <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#06060a;color:#c8c8d8;font-family:system-ui;text-align:center;padding:2rem">
+        <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+                    background:#06060a;color:#c8c8d8;font-family:system-ui;text-align:center;padding:2rem">
             <div>
-                <h1 style="font-size:1.5rem;color:#4ecdc4;margin-bottom:1rem">SonicForge DSP</h1>
+                <h1 style="font-size:1.5rem;color:#4cd9c8;margin-bottom:1rem">SonicForge DSP</h1>
                 <p>This application requires JavaScript. Please enable it in your browser settings.</p>
             </div>
         </div>

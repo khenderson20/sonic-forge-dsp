@@ -21,5 +21,9 @@ set_target_properties(sonicforge PROPERTIES
     # --no-entry: Tells the linker there is no main() function.
     # STANDALONE_WASM: Produces a standard Wasm file without Emscripten JS startup code.
     # EXPORTED_FUNCTIONS: List of C functions to keep alive.
-    LINK_FLAGS "-O3 -s STANDALONE_WASM --no-entry -s EXPORTED_FUNCTIONS=['_audio_init','_audio_process','_audio_set_frequency','_audio_set_waveform','_audio_destroy','_get_buffer']"
+    #   Audio path  : get_buffer, audio_init, audio_process, audio_set_frequency,
+    #                 audio_set_waveform, audio_set_harmonics, audio_destroy
+    #   Viz path    : get_viz_buffer, get_viz_buffer_capacity, viz_render_wavetable
+    #                 (used by the second Wasm instance on the main thread)
+    LINK_FLAGS "-O3 -s STANDALONE_WASM --no-entry -s EXPORTED_FUNCTIONS=['_audio_init','_audio_process','_audio_set_frequency','_audio_set_waveform','_audio_set_harmonics','_audio_destroy','_get_buffer','_get_viz_buffer','_get_viz_buffer_capacity','_viz_render_wavetable']"
 )

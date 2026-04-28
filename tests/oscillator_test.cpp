@@ -326,3 +326,124 @@ TEST(OscillatorSineLUT, AccuracyWithinTolerance) {
 
     EXPECT_LT(max_error, 1e-4F) << "LUT sine max error: " << max_error;
 }
+
+// =============================================================================
+// Stateless sample_at() Equivalence Tests
+// =============================================================================
+
+/**
+ * Oscillator::sample_at() must return values bit-exact to what process()
+ * returns when called with the same phase.
+ *
+ * Strategy: for each waveform, set an Oscillator to a known phase via
+ * set_phase(), call process() to obtain the reference value, then call
+ * sample_at() with the same phase and dt and verify the results match within
+ * floating-point rounding (tolerance 1e-6 F — well below the 16-bit floor).
+ *
+ * Note: process() generates the sample first, then advances phase_.  The
+ * advance does not affect the already-computed output value, so the test loop
+ * can use set_phase() to override the accumulator before every call without
+ * introducing any discrepancy.
+ */
+TEST(OscillatorSampleAt, MatchesProcessForAllWaveforms) {
+    constexpr float sr = 48000.0F;
+    constexpr float freq = 440.0F;
+    constexpr float dt = freq / sr;
+    constexpr float tolerance = 1e-6F;
+    constexpr int n_phases = 200;
+
+    const std::array<sonicforge::Waveform, 4> waveforms = {
+        sonicforge::Waveform::SINE,
+        sonicforge::Waveform::SAW,
+        sonicforge::Waveform::SQUARE,
+        sonicforge::Waveform::TRIANGLE,
+    };
+
+    for (const auto wf : waveforms) {
+        sonicforge::Oscillator osc(wf, freq, sr);
+
+        for (int i = 0; i < n_phases; ++i) {
+            const float phase = static_cast<float>(i) / static_cast<float>(n_phases);
+
+            // Reference: instance path (set_phase then process).
+            // process() outputs at the current phase before advancing it,
+            // so the advance does not affect the reference value.
+            osc.set_phase(phase);
+            const float ref = osc.process();
+
+            // Under test: static stateless path.
+            const float got = sonicforge::Oscillator::sample_at(wf, phase, dt);
+
+            EXPECT_NEAR(got, ref, tolerance)
+                << "waveform=" << static_cast<int>(wf) << "  phase=" << phase << "  dt=" << dt;
+        }
+    }
+}
+
+/**
+ * sample_at() must wrap its @p phase argument into [0, 1) exactly as
+ * set_phase() does, so that passing (phase + 1.0F) gives an identical result
+ * to passing phase.
+ */
+TEST(OscillatorSampleAt, PhaseWrapsConsistently) {
+    constexpr float dt = 440.0F / 48000.0F;
+
+    const std::array<sonicforge::Waveform, 4> waveforms = {
+        sonicforge::Waveform::SINE,
+        sonicforge::Waveform::SAW,
+        sonicforge::Waveform::SQUARE,
+        sonicforge::Waveform::TRIANGLE,
+    };
+
+    for (const auto wf : waveforms) {
+        for (int i = 0; i < 20; ++i) {
+            const float base = static_cast<float>(i) / 20.0F;  // [0, 1)
+            const float shift = base + 1.0F;                   // [1, 2)
+
+            const float s_base = sonicforge::Oscillator::sample_at(wf, base, dt);
+            const float s_shift = sonicforge::Oscillator::sample_at(wf, shift, dt);
+
+            EXPECT_NEAR(s_base, s_shift, 1e-6F)
+                << "waveform=" << static_cast<int>(wf) << "  phase=" << base;
+        }
+    }
+}
+
+/**
+ * Batch wavetable render equivalence: evaluating sample_at() for n_pts
+ * evenly-spaced phases (0/n … (n-1)/n) must produce a signal with the same
+ * peak absolute value as one period of process() output, validating that the
+ * visualisation path faithfully reproduces the audio-path amplitude.
+ */
+TEST(OscillatorSampleAt, WavetablePeakMatchesProcessPeak) {
+    constexpr int n_pts = 256;
+    constexpr float dt = 1.0F / static_cast<float>(n_pts);  // one cycle in n_pts steps
+
+    const std::array<sonicforge::Waveform, 4> waveforms = {
+        sonicforge::Waveform::SINE,
+        sonicforge::Waveform::SAW,
+        sonicforge::Waveform::SQUARE,
+        sonicforge::Waveform::TRIANGLE,
+    };
+
+    for (const auto wf : waveforms) {
+        // --- Reference: process() for one exact cycle at n_pts samples/period ---
+        // frequency = 1, sample_rate = n_pts  → dt = 1/n_pts, period = n_pts samples.
+        sonicforge::Oscillator ref_osc(wf, 1.0F, static_cast<float>(n_pts));
+        float max_ref = 0.0F;
+        for (int i = 0; i < n_pts; ++i) {
+            max_ref = std::max(max_ref, std::fabs(ref_osc.process()));
+        }
+
+        // --- Under test: sample_at() sweep ---
+        float max_got = 0.0F;
+        for (int i = 0; i < n_pts; ++i) {
+            const float phase = static_cast<float>(i) * dt;
+            max_got =
+                std::max(max_got, std::fabs(sonicforge::Oscillator::sample_at(wf, phase, dt)));
+        }
+
+        EXPECT_NEAR(max_got, max_ref, 1e-4F)
+            << "peak mismatch for waveform=" << static_cast<int>(wf);
+    }
+}

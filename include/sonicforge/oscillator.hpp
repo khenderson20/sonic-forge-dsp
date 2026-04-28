@@ -211,6 +211,33 @@ public:
      */
     [[nodiscard]] float get_phase() const noexcept;
 
+    // =========================================================================
+    // Static Utility — Stateless Waveform Evaluation
+    // =========================================================================
+
+    /**
+     * @brief Evaluate a waveform sample at an arbitrary phase position.
+     *
+     * Stateless query that uses the exact same LUT and PolyBLEP algorithms as
+     * process() / process_block() but advances no internal accumulator.
+     * Output is numerically identical to process() when called with the same
+     * @p phase and @p dt values.
+     *
+     * Primary use case: batch wavetable rendering for visualisation, where
+     * the caller supplies an evenly-spaced phase sequence rather than a
+     * running audio clock.
+     *
+     * @param wf    Waveform to evaluate.  Out-of-range values fall back to
+     *              Waveform::SINE.
+     * @param phase Normalised phase in [0, 1).  Values outside this range are
+     *              wrapped via floor subtraction.
+     * @param dt    Phase increment per sample = frequency / sample_rate.
+     *              Used only by waveforms that apply PolyBLEP correction
+     *              (SAW, SQUARE); ignored for SINE and TRIANGLE.
+     * @return      Sample value in [-1.0, 1.0].
+     */
+    [[nodiscard]] static float sample_at(Waveform wf, float phase, float dt) noexcept;
+
 private:
     /**
      * @brief Generate a sine wave sample at the current phase (LUT-based)

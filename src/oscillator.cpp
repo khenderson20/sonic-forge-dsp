@@ -88,6 +88,66 @@ const std::array<float, SINE_LUT_SIZE> SINE_LUT = []() noexcept {
     return static_cast<uint8_t>(w) <= static_cast<uint8_t>(sonicforge::Waveform::TRIANGLE);
 }
 
+// =============================================================================
+// Stateless waveform evaluators
+//
+// These free functions contain the actual synthesis logic and are shared by
+// both the instance generate_*() methods and the static Oscillator::sample_at()
+// utility.  Keeping a single definition guarantees bit-exact equivalence
+// between the audio-thread processing path and the batch visualisation path.
+// =============================================================================
+
+/**
+ * @brief Evaluate a single LUT-interpolated sine sample at normalised phase.
+ *
+ * Behaviour is identical to Oscillator::generate_sine() for the same phase_.
+ */
+[[nodiscard]] inline float sine_at(float phase) noexcept {
+    constexpr auto lut_scale = static_cast<float>(SINE_LUT_SIZE);
+    const float pos = phase * lut_scale;
+    const auto idx0 = static_cast<std::size_t>(pos);
+    const float frac = pos - static_cast<float>(idx0);
+    const std::size_t idx1 = (idx0 + 1U) & (SINE_LUT_SIZE - 1U);
+    return SINE_LUT[idx0] + (frac * (SINE_LUT[idx1] - SINE_LUT[idx0]));
+}
+
+/**
+ * @brief Evaluate a PolyBLEP-corrected sawtooth sample.
+ *
+ * Behaviour is identical to Oscillator::generate_saw() for the same phase_
+ * and (frequency_ / sample_rate_) values.
+ */
+[[nodiscard]] inline float saw_at(float phase, float dt) noexcept {
+    return ((2.0F * phase) - 1.0F) - poly_blep(phase, dt);
+}
+
+/**
+ * @brief Evaluate a PolyBLEP-corrected square wave sample.
+ *
+ * Behaviour is identical to Oscillator::generate_square() for the same
+ * phase_ and (frequency_ / sample_rate_) values.
+ */
+[[nodiscard]] inline float square_at(float phase, float dt) noexcept {
+    float naive = (phase < 0.5F) ? 1.0F : -1.0F;
+    naive += poly_blep(phase, dt);
+    const float shifted = phase + 0.5F;
+    naive -= poly_blep((shifted >= 1.0F) ? (shifted - 1.0F) : shifted, dt);
+    return naive;
+}
+
+/**
+ * @brief Evaluate a triangle wave sample at normalised phase.
+ *
+ * Behaviour is identical to Oscillator::generate_triangle() for the same
+ * phase_.
+ */
+[[nodiscard]] inline float triangle_at(float phase) noexcept {
+    if (phase < 0.5F) {
+        return (4.0F * phase) - 1.0F;
+    }
+    return 3.0F - (4.0F * phase);
+}
+
 }  // anonymous namespace
 
 namespace sonicforge {
@@ -160,75 +220,29 @@ void Oscillator::process_block(float* buffer, std::size_t num_samples) noexcept 
 // =============================================================================
 
 float Oscillator::generate_sine() const noexcept {
-    // LUT-based sine with linear interpolation (Fix #11).
-    //
-    // The LUT stores one full period (0 → 2π) in SINE_LUT_SIZE floats.
-    // We map phase ∈ [0, 1) to an index ∈ [0, SINE_LUT_SIZE) and
-    // interpolate between the two bounding table entries.
-    //
-    // Peak error vs std::sin: ~2.3e-6 (≈ −113 dB) — well below 16-bit audio.
-    constexpr auto lut_scale = static_cast<float>(SINE_LUT_SIZE);
-    const float pos = phase_ * lut_scale;
-    const auto idx0 = static_cast<std::size_t>(pos);
-    const float frac = pos - static_cast<float>(idx0);
-    const std::size_t idx1 = (idx0 + 1U) & (SINE_LUT_SIZE - 1U);  // wrap
-    return SINE_LUT[idx0] + (frac * (SINE_LUT[idx1] - SINE_LUT[idx0]));
+    return sine_at(phase_);
 }
 
 float Oscillator::generate_saw() const noexcept {
-    // Naive sawtooth: linear ramp from −1 at phase=0 to +1 at phase→1,
-    // with a hard discontinuity (jump of 2) at the wrap point.
-    //
-    // PolyBLEP correction (Fix #1):
-    //   corrected = naive - poly_blep(phase, dt)
-    //
-    // poly_blep returns:
-    //   ≈ −1 at t=0  (just after wrap)     → raises the low post-wrap value
-    //   ≈ +1 at t→1  (just before wrap)    → lowers the high pre-wrap value
-    // This smoothly connects the two sides through 0, eliminating the step.
+    // PolyBLEP-corrected sawtooth.  Delegates to saw_at() so the static
+    // sample_at() path is bit-exact with the instance processing path.
     const float dt =
         frequency_.load(std::memory_order_relaxed) / sample_rate_.load(std::memory_order_relaxed);
-    return ((2.0F * phase_) - 1.0F) - poly_blep(phase_, dt);
+    return saw_at(phase_, dt);
 }
 
 float Oscillator::generate_square() const noexcept {
-    // Naive square: +1 for phase ∈ [0, 0.5), −1 for phase ∈ [0.5, 1).
-    // Two hard discontinuities: a rising step at phase=0 and a falling step
-    // at phase=0.5.
-    //
-    // PolyBLEP correction (Fix #1):
-    //   corrected = naive + poly_blep(phase, dt)        ← rising edge at 0
-    //                     - poly_blep((phase+0.5)%1, dt) ← falling edge at 0.5
-    //
-    // The two correction regions never overlap for dt ≤ 0.5, which is
-    // guaranteed because set_frequency() clamps frequency to Nyquist.
+    // PolyBLEP-corrected square wave.  Delegates to square_at() so the static
+    // sample_at() path is bit-exact with the instance processing path.
     const float dt =
         frequency_.load(std::memory_order_relaxed) / sample_rate_.load(std::memory_order_relaxed);
-
-    float naive = (phase_ < 0.5F) ? 1.0F : -1.0F;
-
-    // Rising-edge correction (discontinuity at phase = 0)
-    naive += poly_blep(phase_, dt);
-
-    // Falling-edge correction (discontinuity at phase = 0.5)
-    // Shift phase by 0.5 so that the correction is centred on that edge.
-    const float shifted = phase_ + 0.5F;
-    naive -= poly_blep((shifted >= 1.0F) ? (shifted - 1.0F) : shifted, dt);
-
-    return naive;
+    return square_at(phase_, dt);
 }
 
 float Oscillator::generate_triangle() const noexcept {
-    // Triangle wave: piecewise linear with no step discontinuities.
-    // It aliases less than saw/square without anti-aliasing because all
-    // harmonics decay as 1/n² (rather than 1/n for saw/square).
-    //
-    // Rising edge  (phase 0 → 0.5):  output −1 → +1
-    // Falling edge (phase 0.5 → 1):  output +1 → −1
-    if (phase_ < 0.5F) {
-        return (4.0F * phase_) - 1.0F;
-    }
-    return 3.0F - (4.0F * phase_);
+    // Triangle wave.  Delegates to triangle_at() for bit-exact equivalence
+    // with the static sample_at() path.
+    return triangle_at(phase_);
 }
 
 // =============================================================================
@@ -308,6 +322,31 @@ float Oscillator::get_sample_rate() const noexcept {
 
 float Oscillator::get_phase() const noexcept {
     return phase_;
+}
+
+// =============================================================================
+// Static Utility — Stateless Waveform Evaluation
+// =============================================================================
+
+float Oscillator::sample_at(Waveform wf, float phase, float dt) noexcept {
+    // Wrap phase into [0, 1) using the same method as set_phase() so that
+    // callers can pass raw accumulated values without pre-normalising.
+    phase = phase - std::floor(phase);
+
+    switch (wf) {
+        case Waveform::SINE:
+            return sine_at(phase);
+        case Waveform::SAW:
+            return saw_at(phase, dt);
+        case Waveform::SQUARE:
+            return square_at(phase, dt);
+        case Waveform::TRIANGLE:
+            return triangle_at(phase);
+        default:
+            // Out-of-range enum values fall back to SINE, matching the
+            // constructor and set_waveform() validation behaviour.
+            return sine_at(phase);
+    }
 }
 
 }  // namespace sonicforge
