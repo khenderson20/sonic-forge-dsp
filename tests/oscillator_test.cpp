@@ -266,8 +266,7 @@ TEST(OscillatorPolyBLEP, SawHasSmoothedTransitions) {
         for (int i = 0; i < samples; ++i) {
             const float cur = osc.process();
             ASSERT_LE(std::fabs(cur - prev), 1.5F)
-                << "freq=" << freq << " sample=" << i
-                << " delta=" << std::fabs(cur - prev);
+                << "freq=" << freq << " sample=" << i << " delta=" << std::fabs(cur - prev);
             prev = cur;
         }
     }
@@ -288,8 +287,7 @@ TEST(OscillatorPolyBLEP, SquareHasSmoothedTransitions) {
         for (int i = 0; i < samples; ++i) {
             const float cur = osc.process();
             ASSERT_LE(std::fabs(cur - prev), 1.5F)
-                << "freq=" << freq << " sample=" << i
-                << " delta=" << std::fabs(cur - prev);
+                << "freq=" << freq << " sample=" << i << " delta=" << std::fabs(cur - prev);
             prev = cur;
         }
     }

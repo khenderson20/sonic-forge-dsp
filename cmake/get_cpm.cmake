@@ -28,6 +28,27 @@ else()
         "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
 endif()
 
+
+# ── Tilde expansion ───────────────────────────────────────────────────────────
+# cmake file() operations do not expand the shell shorthand "~" to the home
+# directory — that expansion is performed only by the shell.  When
+# CPM_SOURCE_CACHE is set via a YAML env block (e.g. "~/.cache/CPM") the
+# literal tilde is passed to cmake and must be resolved here.
+if(_cpm_download_location MATCHES "^~[/\\]?")
+    if(DEFINED ENV{HOME})
+        set(_cpm_home "$ENV{HOME}")
+    elseif(DEFINED ENV{USERPROFILE})
+        file(TO_CMAKE_PATH "$ENV{USERPROFILE}" _cpm_home)
+    else()
+        message(WARNING "CPM bootstrap: cannot expand '~' — neither HOME nor "
+            "USERPROFILE is set.  Set CPM_SOURCE_CACHE to an absolute path.")
+        set(_cpm_home "~")
+    endif()
+    string(REGEX REPLACE "^~" "${_cpm_home}" _cpm_download_location
+        "${_cpm_download_location}")
+    unset(_cpm_home)
+endif()
+
 if(NOT EXISTS "${_cpm_download_location}")
     message(STATUS
         "Downloading CPM.cmake v${CPM_DOWNLOAD_VERSION} "
