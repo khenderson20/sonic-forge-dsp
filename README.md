@@ -1,20 +1,13 @@
-```
-  ███████╗ ██████╗ ███╗   ██╗██╗ ██████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
-  ██╔════╝██╔═══██╗████╗  ██║██║██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
-  ███████╗██║   ██║██╔██╗ ██║██║██║     █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
-  ═════██║██║   ██║██║╚██╗██║██║██║     ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
-  ███████║╚██████╔╝██║ ╚████║██║╚██████╗██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
-  ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝ ╚═════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
-                              ╔═══════════════════╗
-                              ║   D  S  P  ♪ ♫   ║
-                              ╚═══════════════════╝
-```
+<p align="center">
+  <img src="examples/images/sonic-forge-dsp.png" alt="SonicForge DSP" width="720">
+</p>
 
 # SonicForge DSP
 
 A lightweight C++ oscillator library with WebAssembly support for browser-based audio and visualization.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/khenderson20/sonic-forge-dsp/actions/workflows/ci.yml/badge.svg)](https://github.com/khenderson20/sonic-forge-dsp/actions/workflows/ci.yml)
 
 ---
 
@@ -45,11 +38,12 @@ The library compiles natively on Linux, macOS, and Windows, and can be built to 
 - **No wavetable oscillator** — the C++ library generates waveforms algorithmically; it does not load or scan wavetables
 - **No sub-sample parameter interpolation** — atomic parameter changes take effect at the next sample boundary; there is no ramping or fractional-delay interpolation
 
-### Technical details
+### Technical Details
 
 - **No heap allocation in the audio path** — `process()` and `process_block()` perform zero dynamic allocation. The sine LUT is a compile-time `const std::array`
-- **Lock-free parameter access** — the three mutable state members (`frequency_`, `sample_rate_`, `waveform_`) are `std::atomic` and accessed with `std::memory_order_relaxed` in the processing loop. This avoids mutexes but provides no ordering guarantees beyond atomicity
+- **Lock-free parameter access** — the three mutable state members (`frequency_`, `sample_rate_`, `waveform_`) are `std::atomic` and accessed with `std::memory_order_relaxed` in the processing loop
 - **C++17** — requires a conforming C++17 compiler
+- **Dependencies** — the core library has zero runtime dependencies. [GoogleTest](https://github.com/google/googletest) is fetched automatically at configure time via [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) and is only required when `SONICFORGE_BUILD_TESTS=ON`
 - **Version 0.1.0** — early stage; the public API may change
 
 ---
@@ -63,6 +57,8 @@ The library compiles natively on Linux, macOS, and Windows, and can be built to 
 | Compiler | GCC 9+ or Clang 10+ |
 | CMake | 3.15+ |
 | Build System | Make or Ninja |
+
+> **Note:** GoogleTest is fetched automatically by CPM.cmake during `cmake` configure when `SONICFORGE_BUILD_TESTS=ON`. No manual installation is required.
 
 ### WebAssembly Build
 
@@ -80,34 +76,47 @@ The library compiles natively on Linux, macOS, and Windows, and can be built to 
 
 ```bash
 # Clone the repository
-git clone https://codeberg.org/Nanometer7008/sonic-forge-dsp.git
+git clone https://github.com/khenderson20/sonic-forge-dsp.git
 cd sonic-forge-dsp
 
-# Configure and build
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+# Configure and build (GoogleTest is fetched automatically)
+cmake -B build -DSONICFORGE_BUILD_TESTS=ON
+cmake --build build --parallel
 
 # Run tests
-ctest --output-on-failure
+ctest --test-dir build --output-on-failure
 ```
 
 #### Build with Ninja (Recommended)
 
 ```bash
-mkdir build && cd build
-cmake -G Ninja ..
-ninja
+cmake -B build -G Ninja -DSONICFORGE_BUILD_TESTS=ON
+cmake --build build
 ```
 
 #### Build Types
 
 ```bash
-# Release build (optimized, -O3 -march=native)
-cmake -DCMAKE_BUILD_TYPE=Release ..
+# Release build (optimized, -O3)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-# Debug build (with AddressSanitizer and UndefinedBehaviorSanitizer)
-cmake -DCMAKE_BUILD_TYPE=Debug ..
+# Debug build
+cmake -B build -DCMAKE_BUILD_TYPE=Debug
+```
+
+#### Caching CPM Downloads
+
+Set `CPM_SOURCE_CACHE` to avoid re-downloading dependencies on every clean build:
+
+```bash
+cmake -B build -DCPM_SOURCE_CACHE=~/.cache/CPM -DSONICFORGE_BUILD_TESTS=ON
+```
+
+Or export it as an environment variable:
+
+```bash
+export CPM_SOURCE_CACHE=~/.cache/CPM
+cmake -B build -DSONICFORGE_BUILD_TESTS=ON
 ```
 
 ### WebAssembly Build
@@ -115,9 +124,8 @@ cmake -DCMAKE_BUILD_TYPE=Debug ..
 #### Option 1: Via root CMake (recommended)
 
 ```bash
-mkdir build && cd build
-cmake .. -DSONICFORGE_BUILD_WEB=ON -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+cmake -B build -DSONICFORGE_BUILD_WEB=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
 ```
 
 #### Option 2: Standalone Emscripten build
@@ -143,19 +151,32 @@ For detailed web-specific instructions, see [web/README.md](web/README.md).
 
 int main() {
     // Create a sine wave oscillator at A4 (440 Hz)
-    sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0f);
-    osc.set_sample_rate(48000.0f);
+    sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0F);
+    osc.set_sample_rate(48000.0F);
 
     constexpr size_t BUFFER_SIZE = 256;
     float buffer[BUFFER_SIZE];
 
     osc.process_block(buffer, BUFFER_SIZE);
 
-    osc.set_frequency(880.0f);
+    // Thread-safe parameter changes (safe to call from any thread)
+    osc.set_frequency(880.0F);
     osc.set_waveform(sonicforge::Waveform::SAW);
 
     return 0;
 }
+```
+
+### Hearing the Output
+
+The examples write raw float audio that can be piped directly to a system audio device or saved as a WAV file:
+
+```bash
+# Play a 440 Hz sine wave through the system speaker (Linux)
+./build/sine_example | aplay -f FLOAT_LE -r 48000 -c 1
+
+# Save a 2-second 440 Hz sine wave as a WAV file
+./build/wav_writer_example output.wav 440 2.0
 ```
 
 ### Linking to Your Project
@@ -184,9 +205,35 @@ g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
 | Option | Default | Description |
 |--------|---------|-------------|
 | `SONICFORGE_BUILD_EXAMPLES` | `ON` | Build example programs |
-| `SONICFORGE_BUILD_TESTS` | `ON` | Build unit tests |
+| `SONICFORGE_BUILD_TESTS` | `ON` | Build unit tests (fetches GoogleTest via CPM) |
 | `SONICFORGE_BUILD_WEB` | `OFF` | Build WebAssembly AudioWorklet module |
 | `SONICFORGE_OPTIMIZE_FOR_HOST` | `OFF` | Add `-march=native` to Release builds |
+
+---
+
+## Testing
+
+Tests are written with [GoogleTest](https://github.com/google/googletest) and fetched automatically at configure time via CPM.cmake. The test suite covers 19 cases across 6 suites.
+
+| Suite | Cases | What is tested |
+|-------|-------|----------------|
+| `OscillatorConstruction` | 4 | Default values, custom parameters, invalid waveform/frequency fallback |
+| `OscillatorOutputRange` | 4 | All waveforms stay within `[-1, 1]` for one second of output |
+| `OscillatorWaveform` | 2 | Sine starts at zero, peak lands at quarter-period |
+| `OscillatorParameters` | 4 | `set_frequency`, `set_waveform`, invalid waveform ignored, phase reset |
+| `OscillatorProcessing` | 2 | Block path matches sample-by-sample path; phase wraps correctly |
+| `OscillatorPolyBLEP` | 2 | Saw and square transitions stay smooth across 100 Hz / 1 kHz / 4.8 kHz |
+| `OscillatorSineLUT` | 1 | LUT output is within `1e-4` of `std::sin` (expected peak error ≈ −113 dB) |
+
+### Running Tests
+
+```bash
+cmake -B build -DSONICFORGE_BUILD_TESTS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+Each `TEST()` case registers as a separate CTest entry via `gtest_discover_tests`, giving per-test pass/fail output in CI.
 
 ---
 
@@ -194,34 +241,57 @@ g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
 
 ```
 sonic-forge-dsp/
-├── include/sonicforge/      # Public API header
-│   └── oscillator.hpp       # Single class: sonicforge::Oscillator
-├── src/                     # Implementation
+├── include/sonicforge/          # Public API header
+│   └── oscillator.hpp           # Single class: sonicforge::Oscillator
+├── src/                         # Implementation
 │   └── oscillator.cpp
-├── tests/                   # Unit tests (17 cases, custom test harness)
+├── tests/                       # Unit tests (GoogleTest, 19 cases)
 │   └── oscillator_test.cpp
-├── examples/                # Example programs
-│   ├── sine_example.cpp     # Outputs raw floats to stdout (pipeable to aplay)
-│   └── wav_writer_example.cpp # Generates a WAV file with fade-in/fade-out
-├── cmake/                   # CMake helpers & pkg-config
-│   └── sonicforge.pc.in
-├── web/                     # WebAssembly build + 3D visualization
+├── examples/                    # Example programs
+│   ├── images/
+│   │   └── sonic-forge-dsp.png  # Project banner image
+│   ├── sine_example.cpp         # Outputs raw floats to stdout (pipeable to aplay)
+│   └── wav_writer_example.cpp   # Generates a WAV file with fade-in/fade-out
+├── cmake/                       # CMake helpers
+│   ├── get_cpm.cmake            # CPM.cmake bootstrap (auto-downloads CPM)
+│   └── sonicforge.pc.in         # pkg-config template
+├── scripts/                     # Developer tooling
+│   ├── install-hooks.sh         # Interactive pre-commit hook installer
+│   ├── git-hooks/
+│   │   └── pre-commit           # Standalone hook (no extra tools required)
+│   └── pre-commit/              # Hook helpers for the pre-commit framework
+│       ├── check-format.sh      # clang-format check on staged files
+│       ├── check-tidy.sh        # clang-tidy static analysis
+│       └── run-tests.sh         # cmake build + ctest
+├── web/                         # WebAssembly build + 3D visualization
 │   ├── CMakeLists.txt
 │   ├── src/sonicforge_worklet.cpp   # C bridge for Wasm
-│   └── public/              # Three.js visualization + AudioWorklet processor
-├── CMakeLists.txt           # Root build configuration
-├── Doxyfile                 # Documentation generator config
-├── .clang-format            # Code style configuration
-└── .clang-tidy              # Static analysis rules
+│   └── public/                  # Three.js visualization + AudioWorklet processor
+├── .github/workflows/
+│   └── ci.yml                   # GitHub Actions CI (3 jobs, Node.js 24)
+├── .pre-commit-config.yaml      # pre-commit framework hook configuration
+├── CMakeLists.txt               # Root build configuration
+├── Doxyfile                     # Documentation generator config
+├── .clang-format                # Code style configuration
+└── .clang-tidy                  # Static analysis rules
 ```
 
 ---
 
 ## Code Quality
 
-SonicForge DSP uses **clang-format** for automated code formatting and **clang-tidy** for static analysis. Both tools are configured at the repository root and enforced in CI.
+SonicForge DSP enforces code quality at three levels: local pre-commit hooks, automated CI, and static analysis.
 
-### Quick Reference
+### clang-format
+
+The project uses clang-format-18 based on LLVM style with the following key settings:
+
+| Setting | Value |
+|---------|-------|
+| `IndentWidth` | 4 |
+| `ColumnLimit` | 100 |
+| `IncludeBlocks` | Regroup (project → external → STL) |
+| `AllowShortIfStatementsOnASingleLine` | Never |
 
 **Format all C++ files:**
 
@@ -237,34 +307,12 @@ find include src tests examples web/src \
 clang-format --dry-run --Werror src/oscillator.cpp
 ```
 
-**Generate compilation database:**
+### clang-tidy
 
-```bash
-cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-```
+Static analysis is configured in `.clang-tidy` with `HeaderFilterRegex: '.*sonicforge.*'` so only project headers produce diagnostics.
 
-**Run clang-tidy:**
-
-```bash
-clang-tidy -p build src/oscillator.cpp
-clang-tidy --warnings-as-errors='*' -p build src/oscillator.cpp tests/oscillator_test.cpp
-```
-
-### Configuration Summary
-
-**clang-format** (based on LLVM style):
-
-| Setting | Value |
-|---------|-------|
-| IndentWidth | 4 |
-| ColumnLimit | 100 |
-| ShortIfStatements | Never on single line |
-| SortIncludes | CaseSensitive |
-
-**clang-tidy** enabled check groups:
-
-| Group | Catches |
-|-------|---------|
+| Check group | Catches |
+|-------------|---------|
 | `bugprone-*` | Incorrect assertions, integer overflow |
 | `cppcoreguidelines-*` | Raw pointers, C-style arrays |
 | `misc-*` | Missing `const`, include hygiene |
@@ -273,67 +321,91 @@ clang-tidy --warnings-as-errors='*' -p build src/oscillator.cpp tests/oscillator
 | `readability-*` | Naming conventions, braces |
 | `clang-analyzer-*` | Null dereferences, memory leaks |
 
-### Enforcing in Pre-commit Hooks
-
-**Shell-based hook (`.git/hooks/pre-commit`):**
+**Generate compilation database and run clang-tidy:**
 
 ```bash
-cat > .git/hooks/pre-commit << 'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-STAGED=$(git diff --cached --name-only --diff-filter=ACM \
-         | grep -E '\.(cpp|hpp|h)$' || true)
-
-[ -z "$STAGED" ] && exit 0
-
-echo "Running clang-format check..."
-for FILE in $STAGED; do
-  clang-format --dry-run --Werror "$FILE" || {
-    echo "  $FILE is not formatted."
-    echo "  Run: clang-format -i $FILE"
-    exit 1
-  }
-done
-
-if [ -f "build/compile_commands.json" ]; then
-  echo "Running clang-tidy check..."
-  clang-tidy --warnings-as-errors='*' -p build $STAGED || {
-    echo "  clang-tidy found violations."
-    exit 1
-  }
-fi
-EOF
-chmod +x .git/hooks/pre-commit
+cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DSONICFORGE_BUILD_TESTS=ON
+clang-tidy --warnings-as-errors='*' -p build src/oscillator.cpp tests/oscillator_test.cpp
 ```
 
-**Using the `pre-commit` framework (`.pre-commit-config.yaml`):**
+---
 
-```yaml
-repos:
-  - repo: https://github.com/pocc/pre-commit-hooks
-    rev: v1.3.5
-    hooks:
-      - id: clang-format
-        args: [--style=file]
-      - id: clang-tidy
-        args: [-p=build, --warnings-as-errors=*]
-```
+## Pre-commit Hooks
+
+Pre-commit hooks mirror all three CI jobs so formatting violations, static analysis errors, and test failures are caught locally before push. Two installation modes are available:
+
+### Option 1 — Standalone hook (no extra tools required)
+
+A self-contained bash script is installed as a symlink into `.git/hooks/`:
 
 ```bash
-pip install pre-commit
+bash scripts/install-hooks.sh   # select [1]
+```
+
+Selective bypassing via environment variables:
+
+```bash
+SONICFORGE_SKIP_FORMAT=1  git commit   # skip clang-format
+SONICFORGE_SKIP_TIDY=1    git commit   # skip clang-tidy
+SONICFORGE_SKIP_TESTS=1   git commit   # skip build + test
+git commit --no-verify                 # bypass all hooks
+```
+
+### Option 2 — pre-commit framework
+
+Requires [`pre-commit`](https://pre-commit.com) to be installed. Hook configuration is tracked in `.pre-commit-config.yaml`.
+
+```bash
+pip install pre-commit          # once per machine
+bash scripts/install-hooks.sh  # select [2]
+```
+
+Or manually:
+
+```bash
 pre-commit install
 ```
 
-### CI Enforcement
+| Hook ID | Mirrors CI job | Trigger |
+|---------|---------------|---------|
+| `clang-format` | `clang-format` job | Staged `*.cpp` / `*.hpp` / `*.h` files |
+| `clang-tidy` | `clang-tidy` job | Files under `src/`, `tests/`, `include/` staged |
+| `cmake-build-test` | `build-and-test` job | Every commit (`always_run: true`) |
 
-Both tools run automatically on every push and pull request via GitHub Actions (`.github/workflows/ci.yml`):
+**Run all hooks manually without committing:**
+
+```bash
+pre-commit run --all-files
+```
+
+**Skip a specific hook for a WIP commit:**
+
+```bash
+SKIP=cmake-build-test git commit -m "wip: ..."
+```
+
+Both options automatically locate or configure a cmake build directory and provide clear, actionable error output.
+
+---
+
+## Continuous Integration
+
+Three jobs run automatically on every push and pull request to `main`/`master` via GitHub Actions (`.github/workflows/ci.yml`). All jobs use Node.js 24 compatible action versions (`actions/checkout@v5`, `actions/cache@v5`).
 
 | Job | Runner | What it checks |
 |-----|--------|----------------|
-| `build-and-test` | Linux, macOS, Windows | Compiles library, examples, tests; runs `ctest` |
+| `build-and-test` | Linux (GCC 13, Clang 18), macOS 14, Windows 2022 | Compiles library + examples + tests; runs `ctest` in Debug and Release |
 | `clang-format` | Ubuntu 24.04 + clang-format-18 | All `*.cpp` / `*.hpp` files must be format-clean |
-| `clang-tidy` | Ubuntu 24.04 + clang-tidy-18 | Core library and tests with `--warnings-as-errors='*'` |
+| `clang-tidy` | Ubuntu 24.04 + clang-tidy-18 | `src/oscillator.cpp` and `tests/oscillator_test.cpp` with `--warnings-as-errors='*'` |
+
+### CPM Package Caching
+
+GoogleTest is fetched via CPM.cmake and cached between CI runs using `actions/cache@v5`. The cache key is derived from the hash of all `CMakeLists.txt` and `*.cmake` files, so it is automatically invalidated when dependencies change.
+
+```
+Cache key: cpm-<runner.os>-<hash(CMakeLists.txt, *.cmake)>
+Cache path: ~/.cache/CPM
+```
 
 ---
 
@@ -342,29 +414,29 @@ Both tools run automatically on every push and pull request via GitHub Actions (
 Generate API documentation with Doxygen:
 
 ```bash
-cd docs && doxygen ../Doxyfile
+doxygen Doxyfile
 ```
 
-Output will be available in `docs/html/`.
+Output will be available in `docs/html/index.html`.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please follow these steps:
+Contributions are welcome. Please follow these steps:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes (`git commit -m 'Add your feature'`)
-4. Push to the branch (`git push origin feature/your-feature`)
-5. Open a pull request
+3. Install the pre-commit hooks (`bash scripts/install-hooks.sh`)
+4. Commit your changes — hooks will validate format, tidy, and tests automatically
+5. Push to the branch and open a pull request
 
 ### Coding Standards
 
 - Follow modern C++ best practices (C++17, allocation-free audio paths)
 - Format all files with `clang-format` before committing
 - Ensure `clang-tidy --warnings-as-errors='*'` reports no violations
-- Write unit tests for new functionality
+- Write GoogleTest unit tests for new functionality
 - Document public APIs with Doxygen comments (`@brief`, `@param`, `@return`, `@note`)
 
 ---
@@ -372,6 +444,8 @@ Contributions are welcome! Please follow these steps:
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+> **Note on test dependencies:** GoogleTest is used solely for the test suite and is fetched automatically by CPM.cmake. It is not linked into the installed library and does not affect the MIT licensing of `libsonicforge`.
 
 ---
 
