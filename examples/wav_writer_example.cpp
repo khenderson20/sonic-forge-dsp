@@ -122,11 +122,11 @@ bool write_wav_file(const std::string& filename,
     // but file formats and hardware often use integer representations.
     for (float sample : samples) {
         // Clamp to valid range to prevent overflow
-        sample = std::clamp(sample, -1.0f, 1.0f);
-        
+        sample = std::clamp(sample, -1.0F, 1.0F);
+
         // Scale to 16-bit range
         // Note: We use 32767 (not 32768) to ensure symmetric clipping
-        int16_t sample_16bit = static_cast<int16_t>(sample * 32767.0f);
+        int16_t sample_16bit = static_cast<int16_t>(sample * 32767.0F);
         
         file.write(reinterpret_cast<const char*>(&sample_16bit), sizeof(int16_t));
     }
@@ -146,8 +146,8 @@ int main(int argc, char* argv[]) {
     // ==========================================================================
     
     std::string output_filename = "output.wav";
-    float frequency = 440.0f;
-    float duration = 2.0f;
+    float frequency = 440.0F;
+    float duration = 2.0F;
     
     if (argc >= 2) {
         output_filename = argv[1];
@@ -209,7 +209,7 @@ int main(int argc, char* argv[]) {
     // Learning note: Abrupt starts and stops create clicks (discontinuities).
     // A fade-in/fade-out envelope smooths these transitions.
     
-    const std::size_t fade_samples = static_cast<std::size_t>(0.01f * SAMPLE_RATE); // 10ms fade
+    const std::size_t fade_samples = static_cast<std::size_t>(0.01F * SAMPLE_RATE); // 10ms fade
     
     // Fade in
     for (std::size_t i = 0; i < fade_samples && i < samples.size(); ++i) {

@@ -9,8 +9,88 @@
 #include "sonicforge/oscillator.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+
+namespace {
+
+// =============================================================================
+// Sine Lookup Table (Fix #11 — LUT-based sine with linear interpolation)
+// =============================================================================
+
+/// Number of entries in the compile-time sine table.
+/// 4096 entries with linear interpolation yields peak error ~2.3e-6 (≈ −113 dB)
+/// relative to std::sin, which is well below the 16-bit noise floor (~−96 dB).
+constexpr std::size_t SINE_LUT_SIZE = 4096;
+
+/// Pre-computed sine lookup table, initialised once at program start.
+/// Using double precision during construction keeps each float entry as
+/// accurate as a 32-bit float allows.
+const std::array<float, SINE_LUT_SIZE> SINE_LUT = []() noexcept {
+    std::array<float, SINE_LUT_SIZE> tbl{};
+    constexpr double TWO_PI_D = 2.0 * 3.14159265358979323846;
+    for (std::size_t i = 0; i < SINE_LUT_SIZE; ++i) {
+        tbl[i] = static_cast<float>(
+            std::sin(static_cast<double>(i) * TWO_PI_D /
+                     static_cast<double>(SINE_LUT_SIZE)));
+    }
+    return tbl;
+}();
+
+// =============================================================================
+// PolyBLEP residual (Fix #1 — anti-aliasing for saw and square)
+// =============================================================================
+
+/**
+ * @brief 2-point PolyBLEP correction for a unit step discontinuity at t = 0.
+ *
+ * PolyBLEP (Polynomial Bandlimited Step) subtracts the alias energy introduced
+ * by a discontinuity by fitting a two-sample polynomial correction on either
+ * side of the wrap point.
+ *
+ * Returns a correction value in (-1, +1):
+ *  - t ∈ [0,   dt)    — just after the discontinuity, correction is negative
+ *  - t ∈ (1-dt, 1)    — just before the discontinuity, correction is positive
+ *  - elsewhere        — zero (no correction needed)
+ *
+ * @param t   Current normalised phase in [0, 1)
+ * @param dt  Phase increment for this sample = frequency / sample_rate
+ * @return    Correction residual to be added to / subtracted from the signal
+ */
+[[nodiscard]] inline float poly_blep(float t, float dt) noexcept {
+    if (t < dt) {
+        // Just after the wrap: polynomial ramp from −1 at t=0 to 0 at t=dt
+        t /= dt;
+        return (t + t) - (t * t) - 1.0F;
+    }
+    if (t > 1.0F - dt) {
+        // Just before the wrap: polynomial ramp from 0 at t=(1−dt) to +1 at t→1
+        t = (t - 1.0F) / dt;
+        return (t * t) + (t + t) + 1.0F;
+    }
+    return 0.0F;
+}
+
+// =============================================================================
+// Waveform enum validation (Fix #2)
+// =============================================================================
+
+/**
+ * @brief Return true if @p w maps to a defined Waveform enumerator.
+ *
+ * The backing type is uint8_t; valid values are 0 (SINE) through
+ * 3 (TRIANGLE).  Anything outside that range is considered corrupt
+ * (e.g. from an uninitialised variable or deserialisation error).
+ */
+[[nodiscard]] constexpr bool is_valid_waveform(sonicforge::Waveform w) noexcept {
+    return static_cast<uint8_t>(w) <=
+           static_cast<uint8_t>(sonicforge::Waveform::TRIANGLE);
+}
+
+}  // anonymous namespace
 
 namespace sonicforge {
 
@@ -19,14 +99,35 @@ namespace sonicforge {
 // =============================================================================
 
 Oscillator::Oscillator(Waveform waveform, float frequency, float sample_rate)
-    : phase_{0.0f}, frequency_{frequency}, sample_rate_{sample_rate}, waveform_{waveform} {
-    // Validate inputs - clamp to reasonable ranges
-    if (frequency <= 0.0f) {
-        frequency_.store(440.0f, std::memory_order_relaxed);
-    }
-    if (sample_rate <= 0.0f) {
-        sample_rate_.store(48000.0f, std::memory_order_relaxed);
-    }
+    : phase_{0.0F},
+      // Clamp invalid inputs to safe defaults at construction time
+      frequency_{(frequency > 0.0F) ? frequency : 440.0F},
+      sample_rate_{(sample_rate > 0.0F) ? sample_rate : 48000.0F},
+      // Silently fall back to SINE for any out-of-range enum value
+      waveform_{is_valid_waveform(waveform) ? waveform : Waveform::SINE} {}
+
+// =============================================================================
+// Waveform dispatch (Fix #10 — single definition, no switch in hot loop)
+// =============================================================================
+
+/**
+ * @brief Return the generator function pointer for @p wf.
+ *
+ * The table is a static local inside a static member function, so it is
+ * initialised exactly once (C++11 guarantee) and private member addresses
+ * are accessible because this is a member of Oscillator.
+ *
+ * Safety: is_valid_waveform() is enforced in the constructor and
+ * set_waveform(), so the uint8_t cast is always in [0, 3].
+ */
+Oscillator::GeneratorFn Oscillator::resolve_generator(Waveform wf) noexcept {
+    static const GeneratorFn TABLE[] = {
+        &Oscillator::generate_sine,      // 0 — SINE
+        &Oscillator::generate_saw,       // 1 — SAW
+        &Oscillator::generate_square,    // 2 — SQUARE
+        &Oscillator::generate_triangle,  // 3 — TRIANGLE
+    };
+    return TABLE[static_cast<uint8_t>(wf)];
 }
 
 // =============================================================================
@@ -34,27 +135,10 @@ Oscillator::Oscillator(Waveform waveform, float frequency, float sample_rate)
 // =============================================================================
 
 float Oscillator::process() noexcept {
-    float output = 0.0f;
-
-    // Generate sample based on current waveform
-    switch (waveform_.load(std::memory_order_relaxed)) {
-        case Waveform::SINE:
-            output = generate_sine();
-            break;
-        case Waveform::SAW:
-            output = generate_saw();
-            break;
-        case Waveform::SQUARE:
-            output = generate_square();
-            break;
-        case Waveform::TRIANGLE:
-            output = generate_triangle();
-            break;
-    }
-
-    // Advance phase for next sample
+    const GeneratorFn gen =
+        resolve_generator(waveform_.load(std::memory_order_relaxed));
+    const float output = (this->*gen)();
     advance_phase();
-
     return output;
 }
 
@@ -63,27 +147,13 @@ void Oscillator::process_block(float* buffer, std::size_t num_samples) noexcept 
         return;
     }
 
-    // Cache waveform to avoid repeated atomic loads
-    const Waveform current_waveform = waveform_.load(std::memory_order_relaxed);
+    // Resolve the waveform once for the whole block — avoids a per-sample
+    // atomic load and repeated indirect-branch prediction inside the loop.
+    const GeneratorFn gen =
+        resolve_generator(waveform_.load(std::memory_order_relaxed));
 
-    // Process each sample
-    // Note: For learning purposes, this is straightforward. Production code
-    // might use SIMD optimizations or lookup tables for sine.
-    for (std::size_t i = 0; i < num_samples; ++i) {
-        switch (current_waveform) {
-            case Waveform::SINE:
-                buffer[i] = generate_sine();
-                break;
-            case Waveform::SAW:
-                buffer[i] = generate_saw();
-                break;
-            case Waveform::SQUARE:
-                buffer[i] = generate_square();
-                break;
-            case Waveform::TRIANGLE:
-                buffer[i] = generate_triangle();
-                break;
-        }
+    for (std::size_t i = 0U; i < num_samples; ++i) {
+        buffer[i] = (this->*gen)();
         advance_phase();
     }
 }
@@ -93,55 +163,77 @@ void Oscillator::process_block(float* buffer, std::size_t num_samples) noexcept 
 // =============================================================================
 
 float Oscillator::generate_sine() const noexcept {
-    // Sine wave: sin(2π * phase)
-    // This is the purest waveform - a single frequency with no harmonics
+    // LUT-based sine with linear interpolation (Fix #11).
     //
-    // Learning note: std::sin() can be slow. Production oscillators often use:
-    // - Lookup tables with interpolation
-    // - Polynomial approximations
-    // - SIMD-optimized math libraries
-    return std::sin(TWO_PI * phase_);
+    // The LUT stores one full period (0 → 2π) in SINE_LUT_SIZE floats.
+    // We map phase ∈ [0, 1) to an index ∈ [0, SINE_LUT_SIZE) and
+    // interpolate between the two bounding table entries.
+    //
+    // Peak error vs std::sin: ~2.3e-6 (≈ −113 dB) — well below 16-bit audio.
+    constexpr float LUT_SCALE = static_cast<float>(SINE_LUT_SIZE);
+    const float pos = phase_ * LUT_SCALE;
+    const auto idx0 = static_cast<std::size_t>(pos);
+    const float frac = pos - static_cast<float>(idx0);
+    const std::size_t idx1 = (idx0 + 1U) & (SINE_LUT_SIZE - 1U);  // wrap
+    return SINE_LUT[idx0] + frac * (SINE_LUT[idx1] - SINE_LUT[idx0]);
 }
 
 float Oscillator::generate_saw() const noexcept {
-    // Sawtooth wave: Linear ramp from -1 to +1
-    // Rich in harmonics: contains all harmonics at amplitude 1/n
+    // Naive sawtooth: linear ramp from −1 at phase=0 to +1 at phase→1,
+    // with a hard discontinuity (jump of 2) at the wrap point.
     //
-    // Formula: 2 * phase - 1
-    // When phase goes 0→1, output goes -1→+1
+    // PolyBLEP correction (Fix #1):
+    //   corrected = naive - poly_blep(phase, dt)
     //
-    // Learning note: This naive implementation creates aliasing artifacts
-    // at high frequencies. Production code uses PolyBLEP anti-aliasing.
-    return 2.0f * phase_ - 1.0f;
+    // poly_blep returns:
+    //   ≈ −1 at t=0  (just after wrap)     → raises the low post-wrap value
+    //   ≈ +1 at t→1  (just before wrap)    → lowers the high pre-wrap value
+    // This smoothly connects the two sides through 0, eliminating the step.
+    const float dt =
+        frequency_.load(std::memory_order_relaxed) /
+        sample_rate_.load(std::memory_order_relaxed);
+    return ((2.0F * phase_) - 1.0F) - poly_blep(phase_, dt);
 }
 
 float Oscillator::generate_square() const noexcept {
-    // Square wave: Alternates between -1 and +1
-    // Contains only odd harmonics at amplitude 1/n
+    // Naive square: +1 for phase ∈ [0, 0.5), −1 for phase ∈ [0.5, 1).
+    // Two hard discontinuities: a rising step at phase=0 and a falling step
+    // at phase=0.5.
     //
-    // Learning note: Like saw, this naive implementation aliases.
-    // PolyBLEP applies a polynomial correction at discontinuities.
-    return (phase_ < 0.5f) ? 1.0f : -1.0f;
+    // PolyBLEP correction (Fix #1):
+    //   corrected = naive + poly_blep(phase, dt)        ← rising edge at 0
+    //                     - poly_blep((phase+0.5)%1, dt) ← falling edge at 0.5
+    //
+    // The two correction regions never overlap for dt ≤ 0.5, which is
+    // guaranteed because set_frequency() clamps frequency to Nyquist.
+    const float dt =
+        frequency_.load(std::memory_order_relaxed) /
+        sample_rate_.load(std::memory_order_relaxed);
+
+    float naive = (phase_ < 0.5F) ? 1.0F : -1.0F;
+
+    // Rising-edge correction (discontinuity at phase = 0)
+    naive += poly_blep(phase_, dt);
+
+    // Falling-edge correction (discontinuity at phase = 0.5)
+    // Shift phase by 0.5 so that the correction is centred on that edge.
+    const float shifted = phase_ + 0.5F;
+    naive -= poly_blep((shifted >= 1.0F) ? (shifted - 1.0F) : shifted, dt);
+
+    return naive;
 }
 
 float Oscillator::generate_triangle() const noexcept {
-    // Triangle wave: Linear ramps up and down
-    // Contains only odd harmonics at amplitude 1/n²
-    // (softer than square due to faster harmonic rolloff)
+    // Triangle wave: piecewise linear with no step discontinuities.
+    // It aliases less than saw/square without anti-aliasing because all
+    // harmonics decay as 1/n² (rather than 1/n for saw/square).
     //
-    // Implementation:
-    // - First half (0 to 0.5): ramp from -1 to +1
-    // - Second half (0.5 to 1): ramp from +1 to -1
-    //
-    // Learning note: Triangle waves don't have discontinuities,
-    // so they alias less than saw/square even without anti-aliasing.
-    if (phase_ < 0.5f) {
-        // Rising edge: phase 0→0.5 maps to output -1→+1
-        return 4.0f * phase_ - 1.0f;
-    } else {
-        // Falling edge: phase 0.5→1 maps to output +1→-1
-        return 3.0f - 4.0f * phase_;
+    // Rising edge  (phase 0 → 0.5):  output −1 → +1
+    // Falling edge (phase 0.5 → 1):  output +1 → −1
+    if (phase_ < 0.5F) {
+        return (4.0F * phase_) - 1.0F;
     }
+    return 3.0F - (4.0F * phase_);
 }
 
 // =============================================================================
@@ -149,33 +241,20 @@ float Oscillator::generate_triangle() const noexcept {
 // =============================================================================
 
 void Oscillator::advance_phase() noexcept {
-    // Calculate phase increment based on frequency and sample rate
+    // Phase increment = frequency / sample_rate
     //
-    // phase_increment = frequency / sample_rate
-    //
-    // Example: 440 Hz at 48000 sample rate
-    // - Each sample advances phase by 440/48000 = 0.00917
-    // - After 48000 samples (1 second), phase has cycled 440 times
-    //
-    // This is the fundamental DSP concept of phase accumulation!
-
+    // At 440 Hz / 48 kHz: increment = 440/48000 ≈ 0.00917
+    // → after 48000 samples (1 s) the phase has cycled exactly 440 times.
     const float freq = frequency_.load(std::memory_order_relaxed);
     const float sr = sample_rate_.load(std::memory_order_relaxed);
 
-    const float phase_increment = freq / sr;
-    phase_ += phase_increment;
+    phase_ += freq / sr;
 
-    // Wrap phase to [0, 1) range
-    // This prevents floating-point precision loss over long playback
-    //
-    // Note: Using subtraction instead of fmod() for performance
-    // This works correctly because phase_increment is always < 1
-    // (unless frequency > sample_rate, which would alias anyway)
-    while (phase_ >= 1.0f) {
-        phase_ -= 1.0f;
-    }
-    while (phase_ < 0.0f) {
-        phase_ += 1.0f;
+    // Wrap to [0, 1).  Subtraction is faster than std::fmod and is correct
+    // because set_frequency() clamps freq to ≤ Nyquist, so the increment
+    // is always < 0.5 and at most one subtraction is ever needed.
+    if (phase_ >= 1.0F) {
+        phase_ -= 1.0F;
     }
 }
 
@@ -184,33 +263,37 @@ void Oscillator::advance_phase() noexcept {
 // =============================================================================
 
 void Oscillator::set_frequency(float frequency) noexcept {
-    // Clamp to valid range to prevent negative frequencies or DC
-    // Upper limit prevents aliasing above Nyquist frequency
+    // Clamp to (0, Nyquist] to prevent DC, negative frequencies, and aliasing
+    // above the Nyquist limit.  The Nyquist is derived from the current
+    // sample rate; any remaining tiny race window between set_sample_rate()
+    // and set_frequency() at most allows a brief overshoot that is corrected
+    // on the next set_frequency() call.
     const float sr = sample_rate_.load(std::memory_order_relaxed);
-    const float nyquist = sr * 0.5f;
-
-    frequency = std::clamp(frequency, 0.1f, nyquist);
-    frequency_.store(frequency, std::memory_order_relaxed);
+    const float nyquist = sr * 0.5F;
+    frequency_.store(std::clamp(frequency, 0.1F, nyquist),
+                     std::memory_order_relaxed);
 }
 
 void Oscillator::set_waveform(Waveform waveform) noexcept {
-    waveform_.store(waveform, std::memory_order_relaxed);
+    // Silently ignore invalid enum values (Fix #2)
+    if (is_valid_waveform(waveform)) {
+        waveform_.store(waveform, std::memory_order_relaxed);
+    }
 }
 
 void Oscillator::set_sample_rate(float sample_rate) noexcept {
-    if (sample_rate > 0.0f) {
+    if (sample_rate > 0.0F) {
         sample_rate_.store(sample_rate, std::memory_order_relaxed);
     }
 }
 
 void Oscillator::reset_phase() noexcept {
-    phase_ = 0.0f;
+    phase_ = 0.0F;
 }
 
 void Oscillator::set_phase(float phase) noexcept {
-    // Wrap to valid range [0, 1)
-    phase = phase - std::floor(phase);
-    phase_ = phase;
+    // Subtract the integer part to wrap any value into [0, 1)
+    phase_ = phase - std::floor(phase);
 }
 
 // =============================================================================

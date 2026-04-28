@@ -1,0 +1,203 @@
+# =============================================================================
+# SonicForge DSP — Continuous Integration
+# =============================================================================
+#
+# Jobs
+# ----
+# 1. build-and-test   — compile + ctest on Linux (GCC & Clang), macOS, Windows
+# 2. clang-format     — reject PRs that introduce style violations
+# 3. clang-tidy       — static analysis on Linux/Clang
+#
+# Triggers
+# --------
+# • Every push to main / master
+# • Every pull request targeting main / master
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# ─── Global defaults ──────────────────────────────────────────────────────────
+defaults:
+  run:
+    shell: bash
+
+# =============================================================================
+# Job 1: Build & Test (matrix: OS × compiler)
+# =============================================================================
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.os }} / ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Linux ────────────────────────────────────────────────
+          - os: ubuntu-24.04
+            compiler: gcc
+            cc: gcc-13
+            cxx: g++-13
+            build_type: Debug
+
+          - os: ubuntu-24.04
+            compiler: gcc
+            cc: gcc-13
+            cxx: g++-13
+            build_type: Release
+
+          - os: ubuntu-24.04
+            compiler: clang
+            cc: clang-18
+            cxx: clang++-18
+            build_type: Debug
+
+          - os: ubuntu-24.04
+            compiler: clang
+            cc: clang-18
+            cxx: clang++-18
+            build_type: Release
+
+          # ── macOS ────────────────────────────────────────────────
+          - os: macos-14
+            compiler: appleclang
+            cc: clang
+            cxx: clang++
+            build_type: Debug
+
+          - os: macos-14
+            compiler: appleclang
+            cc: clang
+            cxx: clang++
+            build_type: Release
+
+          # ── Windows ──────────────────────────────────────────────
+          - os: windows-2022
+            compiler: msvc
+            cc: cl
+            cxx: cl
+            build_type: Debug
+
+          - os: windows-2022
+            compiler: msvc
+            cc: cl
+            cxx: cl
+            build_type: Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Linux: install Clang-18 if needed ─────────────────────────
+      - name: Install Clang-18 (Linux)
+        if: runner.os == 'Linux' && matrix.compiler == 'clang'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-18 main"
+          sudo apt-get update -q
+          sudo apt-get install -y clang-18
+
+      # ── Configure ─────────────────────────────────────────────────
+      - name: Configure CMake
+        env:
+          CC:  ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DSONICFORGE_BUILD_TESTS=ON \
+            -DSONICFORGE_BUILD_EXAMPLES=ON \
+            -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF
+
+      # ── Build ──────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+      # ── Test ───────────────────────────────────────────────────────
+      - name: Run Tests
+        working-directory: build
+        run: ctest --build-config ${{ matrix.build_type }} --output-on-failure
+
+  # ===========================================================================
+  # Job 2: clang-format — enforce code style
+  # ===========================================================================
+  clang-format:
+    name: clang-format style check
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format-18
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-18 main"
+          sudo apt-get update -q
+          sudo apt-get install -y clang-format-18
+
+      - name: Check formatting
+        run: |
+          # Collect all project C++ sources (exclude build directories)
+          FILES=$(find include src tests examples web/src \
+            -name "*.cpp" -o -name "*.hpp" -o -name "*.h" 2>/dev/null | sort)
+
+          if [ -z "$FILES" ]; then
+            echo "No C++ files found."
+            exit 1
+          fi
+
+          echo "Checking formatting of:"
+          echo "$FILES"
+
+          # Run clang-format in dry-run mode; non-zero exit means diff found
+          clang-format-18 --dry-run --Werror $FILES
+          echo "All files are correctly formatted."
+
+  # ===========================================================================
+  # Job 3: clang-tidy — static analysis
+  # ===========================================================================
+  clang-tidy:
+    name: clang-tidy static analysis
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Clang-18 toolchain
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-18 main"
+          sudo apt-get update -q
+          sudo apt-get install -y clang-18 clang-tidy-18
+
+      # Generate compile_commands.json that clang-tidy needs
+      - name: Configure CMake (generate compile_commands.json)
+        env:
+          CC:  clang-18
+          CXX: clang++-18
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DSONICFORGE_BUILD_TESTS=ON \
+            -DSONICFORGE_BUILD_EXAMPLES=ON
+
+      # Run clang-tidy against the core library and tests only.
+      # Examples are intentionally excluded to keep warnings focused.
+      # --warnings-as-errors='*' makes every tidy diagnostic fail the job,
+      # ensuring new violations are caught before they land on main.
+      - name: Run clang-tidy
+        run: |
+          clang-tidy-18 \
+            --warnings-as-errors='*' \
+            -p build \
+            src/oscillator.cpp \
+            tests/oscillator_test.cpp \
+            -- -std=c++17 -I include

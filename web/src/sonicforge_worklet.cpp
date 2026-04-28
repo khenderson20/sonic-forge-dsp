@@ -15,6 +15,8 @@
 #include <emscripten/emscripten.h>
 #include <sonicforge/oscillator.hpp>
 
+#include <cmath>
+
 /// Fixed-size output buffer (128 = AudioWorklet render quantum).
 static float g_buffer[128];
 
@@ -39,19 +41,28 @@ float* get_buffer() {
 /**
  * @brief Create (or replace) the oscillator.
  *
- * @param waveform  0=SINE, 1=SAW, 2=SQUARE, 3=TRIANGLE
- * @param frequency Frequency in Hz
+ * @param waveform    0=SINE, 1=SAW, 2=SQUARE, 3=TRIANGLE
+ * @param frequency   Frequency in Hz (must be > 0)
  * @param sample_rate Audio sample rate in Hz — must match AudioContext.sampleRate
+ *
+ * @return  0 on success
+ *         -1 if @p waveform is outside the range [0, 3]
+ *         -2 if @p frequency is not a positive finite number
+ *         -3 if @p sample_rate is not a positive finite number
  */
 EMSCRIPTEN_KEEPALIVE
-void audio_init(int waveform, float frequency, float sample_rate) {
-    if (waveform < 0 || waveform > 3) return;
+int audio_init(int waveform, float frequency, float sample_rate) {
+    if (waveform < 0 || waveform > 3) return -1;
+    if (frequency <= 0.0f || !std::isfinite(frequency)) return -2;
+    if (sample_rate <= 0.0f || !std::isfinite(sample_rate)) return -3;
+
     delete g_oscillator;
     g_oscillator = new sonicforge::Oscillator(
         static_cast<sonicforge::Waveform>(waveform),
         frequency,
         sample_rate
     );
+    return 0;
 }
 
 /**
@@ -85,13 +96,16 @@ void audio_set_frequency(float frequency) {
  * @brief Change the oscillator waveform.
  *
  * @param waveform 0=SINE, 1=SAW, 2=SQUARE, 3=TRIANGLE
+ *
+ * @return  0 on success, -1 if @p waveform is outside [0, 3]
  */
 EMSCRIPTEN_KEEPALIVE
-void audio_set_waveform(int waveform) {
-    if (waveform < 0 || waveform > 3) return;
+int audio_set_waveform(int waveform) {
+    if (waveform < 0 || waveform > 3) return -1;
     if (g_oscillator) {
         g_oscillator->set_waveform(static_cast<sonicforge::Waveform>(waveform));
     }
+    return 0;
 }
 
 /**

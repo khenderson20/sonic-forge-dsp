@@ -27,6 +27,19 @@ const FOG_DENSITY = 0.0025;
    ═══════════════════════════════════════════════════════════════════ */
 const $ = (id) => document.getElementById(id);
 
+/**
+ * Clamp a numeric value to [min, max] and verify it is a finite number.
+ * Returns the clamped value, or `fallback` if the input is non-finite.
+ *
+ * Defence-in-depth: the C++ layer also validates, but catching bad values
+ * early avoids unnecessary postMessage traffic and worklet error paths.
+ */
+function clampFinite(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(Math.max(n, min), max);
+}
+
 /* Create a canvas-texture sprite label */
 function label(text, color, size = 44) {
     const c = document.createElement('canvas');
@@ -359,28 +372,35 @@ class SonicForgeApp {
     $('start-btn').addEventListener('click', () => this._startAudio());
 
     $('freq-slider').addEventListener('input', (e) => {
-      this.freq = Number(e.target.value);
-      $('freq-val').textContent = `${this.freq} Hz`;
-      $('r-freq').textContent   = `${this.freq} Hz`;
-      if (this.worklet) this.worklet.port.postMessage({ type: 'frequency', value: this.freq });
+      // Clamp to the slider's own range [40, 1200] Hz — defence-in-depth
+      // before the value reaches the AudioWorklet / C++ layer.
+      const freq = clampFinite(e.target.value, 40, 1200, 440);
+      this.freq = freq;
+      $('freq-val').textContent = `${freq} Hz`;
+      $('r-freq').textContent   = `${freq} Hz`;
+      if (this.worklet) this.worklet.port.postMessage({ type: 'frequency', value: freq });
     });
 
     $('decay-slider').addEventListener('input', (e) => {
-      this.decay = Number(e.target.value);
-      $('decay-val').textContent = `${this.decay}%`;
-      $('r-decay').textContent   = `${this.decay}%`;
+      const decay = clampFinite(e.target.value, 0, 100, 0);
+      this.decay = decay;
+      $('decay-val').textContent = `${decay}%`;
+      $('r-decay').textContent   = `${decay}%`;
       this._rebuildWaveData();
     });
 
     $('harm-slider').addEventListener('input', (e) => {
-      this.harmonics = Number(e.target.value);
-      $('harm-val').textContent = this.harmonics;
+      const harm = Math.round(clampFinite(e.target.value, 1, 16, 1));
+      this.harmonics = harm;
+      $('harm-val').textContent = harm;
       this._rebuildWaveData();
     });
 
     document.querySelectorAll('.wbtn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        this.wave = Number(btn.dataset.wave);
+        // Clamp waveform index to the four valid values [0, 3]
+        const wave = clampFinite(Number(btn.dataset.wave), 0, 3, 0);
+        this.wave = Math.round(wave);
         document.querySelectorAll('.wbtn').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         $('r-wave').textContent = ['Sine', 'Saw', 'Square', 'Triangle'][this.wave];

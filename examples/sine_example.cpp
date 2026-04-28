@@ -52,8 +52,8 @@ int main(int argc, char* argv[]) {
     // ==========================================================================
     
     // Parse command line arguments (optional)
-    float frequency = 440.0f;      // Hz - A4 (concert pitch)
-    float duration = 3.0f;         // seconds
+    float frequency = 440.0F;      // Hz - A4 (concert pitch)
+    float duration = 3.0F;         // seconds
     
     if (argc >= 2) {
         frequency = std::stof(argv[1]);
@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Audio settings
-    constexpr float SAMPLE_RATE = 48000.0f;  // 48 kHz - standard professional rate
+    constexpr float SAMPLE_RATE = 48000.0F;  // 48 kHz - standard professional rate
     
     // Calculate total samples to generate
     const std::size_t total_samples = static_cast<std::size_t>(SAMPLE_RATE * duration);

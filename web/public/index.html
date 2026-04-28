@@ -176,6 +176,21 @@
         }
     }
     </script>
+
+    <!--
+        Fix #8: Subresource Integrity (SRI) for Three.js CDN assets.
+        modulepreload + integrity ensures the browser verifies the hash of each
+        script before execution, preventing CDN-compromise attacks.
+        Hashes are SHA-384 of the exact bytes at the pinned version URL.
+    -->
+    <link rel="modulepreload"
+          href="https://unpkg.com/three@0.160.0/build/three.module.js"
+          integrity="sha384-61S/Nu32S3E5+n+KpCOTb2eRYps6fVKm+9Gz1QBvSePFthb46f063Aa/qe/lykFZ"
+          crossorigin="anonymous">
+    <link rel="modulepreload"
+          href="https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js"
+          integrity="sha384-qlO/ZugKPxAQUAvTlQoo0QECzxJIJySZmCF/DHdb2Xn/hHndFwX/vfUAC9Hbk6LP"
+          crossorigin="anonymous">
 </head>
 <body>
     <div id="canvas-container"></div>

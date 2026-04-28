@@ -36,7 +36,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
     
     # Optimization flags for Release builds
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+    if(SONICFORGE_OPTIMIZE_FOR_HOST)
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
+        message(STATUS "  Host optimization: ON (-march=native)")
+    else()
+        message(STATUS "  Host optimization: OFF (portable binary)")
+    endif()
     
     # Debug flags
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
@@ -63,6 +69,14 @@ endif()
 # =============================================================================
 option(SONICFORGE_BUILD_EXAMPLES "Build example programs" ON)
 option(SONICFORGE_BUILD_TESTS "Build unit tests" ON)
+
+# Fix #4: -march=native is fast on the build machine but produces binaries
+# that may crash on older CPUs (missing AVX / SSE4 etc.).  Default OFF so
+# distributed binaries are portable; developers can enable it locally.
+option(SONICFORGE_OPTIMIZE_FOR_HOST
+    "Tune the binary for the build machine's exact CPU (-march=native)"
+    OFF
+)
 
 # =============================================================================
 # Main Library Target
@@ -165,5 +179,6 @@ message(STATUS "  C++ Standard:   ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type:     ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build Examples: ${SONICFORGE_BUILD_EXAMPLES}")
 message(STATUS "  Build Tests:    ${SONICFORGE_BUILD_TESTS}")
+message(STATUS "  Host Opt:       ${SONICFORGE_OPTIMIZE_FOR_HOST}")
 message(STATUS "")
 message(STATUS "  Build Web:      ${SONICFORGE_BUILD_WEB}")

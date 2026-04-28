@@ -80,11 +80,22 @@ class SonicForgeProcessor extends AudioWorkletProcessor {
   _handleMessage(data) {
     const { type } = data;
     if (type === 'init') {
-      this.instance.audio_init(data.waveform ?? 0, data.frequency ?? 440.0, sampleRate);
+      // audio_init now returns 0 on success, negative on error
+      const result = this.instance.audio_init(data.waveform ?? 0, data.frequency ?? 440.0, sampleRate);
+      if (result !== 0) {
+        const reasons = { '-1': 'invalid waveform', '-2': 'invalid frequency', '-3': 'invalid sample rate' };
+        const reason = reasons[String(result)] ?? `error code ${result}`;
+        console.error(`[Worklet] audio_init failed: ${reason}`);
+        this.port.postMessage({ type: 'error', message: `audio_init failed: ${reason}` });
+      }
     } else if (type === 'frequency') {
       this.instance.audio_set_frequency(data.value);
     } else if (type === 'waveform') {
-      this.instance.audio_set_waveform(data.value);
+      // audio_set_waveform returns 0 on success, -1 on invalid waveform
+      const result = this.instance.audio_set_waveform(data.value);
+      if (result !== 0) {
+        console.error(`[Worklet] audio_set_waveform failed: invalid waveform index ${data.value}`);
+      }
     } else if (type === 'destroy') {
       // Free C++ oscillator memory to prevent Wasm heap leaks
       if (this.instance.audio_destroy) {
