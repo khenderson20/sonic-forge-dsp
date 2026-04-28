@@ -33,6 +33,7 @@
 *.app
 
 # ---> Build System
+build-ninja/
 build/
 cmake-build-*/
 CMakeFiles/
