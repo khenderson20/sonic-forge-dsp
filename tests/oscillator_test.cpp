@@ -24,100 +24,32 @@
 
 #include <sonicforge/oscillator.hpp>
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <iostream>
-#include <string>
-#include <vector>
-
-// =============================================================================
-// Minimal Test Framework
-// =============================================================================
-
-namespace {
-
-struct TestResult {
-    std::string name;
-    bool passed;
-};
-
-// Use a function-local static to avoid a non-const global variable
-// (cppcoreguidelines-avoid-non-const-global-variables).
-std::vector<TestResult>& test_results() {
-    static std::vector<TestResult> results;
-    return results;
-}
-
-/** Check if two floats are approximately equal within an absolute epsilon. */
-bool approx_equal(float a, float b, float epsilon = 1e-5F) {
-    return std::fabs(a - b) < epsilon;
-}
-
-/** Run a named test function and record the result. */
-void run_test(const std::string& name, bool (*test_func)()) {
-    const bool passed = test_func();
-    test_results().push_back({name, passed});
-
-    if (passed) {
-        std::cout << "  OK  " << name << "\n";
-    } else {
-        std::cout << "  FAIL  " << name << "\n";
-    }
-}
-
-/** Print a summary and return 1 on any failure, 0 on all passing. */
-int summarize() {
-    int passed = 0;
-    int failed = 0;
-
-    for (const auto& result : test_results()) {
-        if (result.passed) {
-            ++passed;
-        } else {
-            ++failed;
-        }
-    }
-
-    std::cout << "\n================================\n";
-    std::cout << "Tests: " << (passed + failed) << " total\n";
-    std::cout << "Passed: " << passed << "\n";
-    std::cout << "Failed: " << failed << "\n";
-    std::cout << "================================\n";
-
-    return (failed > 0) ? 1 : 0;
-}
 
 // =============================================================================
 // Construction Tests
 // =============================================================================
 
-bool test_default_construction() {
+TEST(OscillatorConstruction, DefaultValues) {
     const sonicforge::Oscillator osc;
 
-    if (!approx_equal(osc.get_frequency(), 440.0F, 0.001F)) {
-        return false;
-    }
-    if (!approx_equal(osc.get_sample_rate(), 48000.0F, 0.001F)) {
-        return false;
-    }
-    if (osc.get_waveform() != sonicforge::Waveform::SINE) {
-        return false;
-    }
-    return approx_equal(osc.get_phase(), 0.0F, 0.001F);
+    EXPECT_NEAR(osc.get_frequency(), 440.0F, 0.001F);
+    EXPECT_NEAR(osc.get_sample_rate(), 48000.0F, 0.001F);
+    EXPECT_EQ(osc.get_waveform(), sonicforge::Waveform::SINE);
+    EXPECT_NEAR(osc.get_phase(), 0.0F, 0.001F);
 }
 
-bool test_custom_construction() {
+TEST(OscillatorConstruction, CustomParameters) {
     const sonicforge::Oscillator osc(sonicforge::Waveform::SAW, 880.0F, 44100.0F);
 
-    if (!approx_equal(osc.get_frequency(), 880.0F, 0.001F)) {
-        return false;
-    }
-    if (!approx_equal(osc.get_sample_rate(), 44100.0F, 0.001F)) {
-        return false;
-    }
-    return osc.get_waveform() == sonicforge::Waveform::SAW;
+    EXPECT_NEAR(osc.get_frequency(), 880.0F, 0.001F);
+    EXPECT_NEAR(osc.get_sample_rate(), 44100.0F, 0.001F);
+    EXPECT_EQ(osc.get_waveform(), sonicforge::Waveform::SAW);
 }
 
 /**
@@ -126,87 +58,80 @@ bool test_custom_construction() {
  * The Waveform enum is backed by uint8_t; valid values are 0–3.  Casting
  * an out-of-range value simulates corrupted / deserialised data.
  */
-bool test_invalid_waveform_construction() {
+TEST(OscillatorConstruction, InvalidWaveformFallsBackToSine) {
     // Intentional out-of-range cast to test validation logic.
     // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     const auto invalid = static_cast<sonicforge::Waveform>(42U);
     const sonicforge::Oscillator osc(invalid, 440.0F);
-    return osc.get_waveform() == sonicforge::Waveform::SINE;
+
+    EXPECT_EQ(osc.get_waveform(), sonicforge::Waveform::SINE);
 }
 
-bool test_invalid_frequency_construction() {
+TEST(OscillatorConstruction, InvalidFrequencyFallsBackToDefault) {
     const sonicforge::Oscillator osc_neg(sonicforge::Waveform::SINE, -100.0F);
-    if (!approx_equal(osc_neg.get_frequency(), 440.0F, 0.001F)) {
-        return false;
-    }
+    EXPECT_NEAR(osc_neg.get_frequency(), 440.0F, 0.001F);
+
     const sonicforge::Oscillator osc_zero(sonicforge::Waveform::SINE, 0.0F);
-    return approx_equal(osc_zero.get_frequency(), 440.0F, 0.001F);
+    EXPECT_NEAR(osc_zero.get_frequency(), 440.0F, 0.001F);
 }
 
 // =============================================================================
 // Output Range Tests
 // =============================================================================
 
-bool test_sine_output_range() {
+TEST(OscillatorOutputRange, SineStaysWithinBounds) {
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0F);
 
     for (int i = 0; i < 48000; ++i) {
         const float sample = osc.process();
-        if (sample < -1.0F || sample > 1.0F) {
-            return false;
-        }
+        ASSERT_GE(sample, -1.0F) << "at sample " << i;
+        ASSERT_LE(sample, 1.0F) << "at sample " << i;
     }
-    return true;
 }
 
-bool test_saw_output_range() {
+TEST(OscillatorOutputRange, SawStaysWithinBounds) {
     sonicforge::Oscillator osc(sonicforge::Waveform::SAW, 440.0F);
 
     for (int i = 0; i < 48000; ++i) {
         const float sample = osc.process();
-        if (sample < -1.0F || sample > 1.0F) {
-            return false;
-        }
+        ASSERT_GE(sample, -1.0F) << "at sample " << i;
+        ASSERT_LE(sample, 1.0F) << "at sample " << i;
     }
-    return true;
 }
 
 /**
  * With PolyBLEP anti-aliasing the square wave is no longer exactly ±1 at the
  * transition points.  The output stays within [-1, 1] but has smooth
- * intermediate values near the discontinuities.
+ * intermediate values near the discontinuities.  A tolerance of 1e-6 accounts
+ * for floating-point rounding at the boundary.
  */
-bool test_square_output_range() {
+TEST(OscillatorOutputRange, SquareStaysWithinBounds) {
     sonicforge::Oscillator osc(sonicforge::Waveform::SQUARE, 440.0F);
 
     for (int i = 0; i < 48000; ++i) {
         const float sample = osc.process();
-        if (sample < -1.0F - 1e-6F || sample > 1.0F + 1e-6F) {
-            return false;
-        }
+        ASSERT_GE(sample, -1.0F - 1e-6F) << "at sample " << i;
+        ASSERT_LE(sample, 1.0F + 1e-6F) << "at sample " << i;
     }
-    return true;
 }
 
-bool test_triangle_output_range() {
+TEST(OscillatorOutputRange, TriangleStaysWithinBounds) {
     sonicforge::Oscillator osc(sonicforge::Waveform::TRIANGLE, 440.0F);
 
     for (int i = 0; i < 48000; ++i) {
         const float sample = osc.process();
-        if (sample < -1.0F || sample > 1.0F) {
-            return false;
-        }
+        ASSERT_GE(sample, -1.0F) << "at sample " << i;
+        ASSERT_LE(sample, 1.0F) << "at sample " << i;
     }
-    return true;
 }
 
 // =============================================================================
 // Waveform Behaviour Tests
 // =============================================================================
 
-bool test_sine_starts_at_zero() {
+TEST(OscillatorWaveform, SineStartsAtZero) {
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0F);
-    return approx_equal(osc.process(), 0.0F, 0.001F);
+    EXPECT_NEAR(osc.process(), 0.0F, 0.001F);
 }
 
 /**
@@ -214,7 +139,7 @@ bool test_sine_starts_at_zero() {
  * At 480 Hz / 48 kHz the period is exactly 100 samples, so the peak falls
  * around sample index 25.
  */
-bool test_sine_peak_position() {
+TEST(OscillatorWaveform, SinePeakAtQuarterPeriod) {
     constexpr float frequency = 480.0F;
     constexpr float sample_rate = 48000.0F;
 
@@ -231,72 +156,67 @@ bool test_sine_peak_position() {
         }
     }
 
-    if (!approx_equal(max_sample, 1.0F, 0.01F)) {
-        return false;
-    }
-    return max_index >= 24U && max_index <= 26U;
+    EXPECT_NEAR(max_sample, 1.0F, 0.01F);
+    EXPECT_GE(max_index, 24U);
+    EXPECT_LE(max_index, 26U);
 }
 
 // =============================================================================
 // Parameter Tests
 // =============================================================================
 
-bool test_set_frequency() {
+TEST(OscillatorParameters, SetFrequency) {
     sonicforge::Oscillator osc;
 
     osc.set_frequency(1000.0F);
-    if (!approx_equal(osc.get_frequency(), 1000.0F, 0.001F)) {
-        return false;
-    }
+    EXPECT_NEAR(osc.get_frequency(), 1000.0F, 0.001F);
+
     osc.set_frequency(100.0F);
-    return approx_equal(osc.get_frequency(), 100.0F, 0.001F);
+    EXPECT_NEAR(osc.get_frequency(), 100.0F, 0.001F);
 }
 
-bool test_set_waveform() {
+TEST(OscillatorParameters, SetWaveform) {
     sonicforge::Oscillator osc;
 
     osc.set_waveform(sonicforge::Waveform::SQUARE);
-    if (osc.get_waveform() != sonicforge::Waveform::SQUARE) {
-        return false;
-    }
+    EXPECT_EQ(osc.get_waveform(), sonicforge::Waveform::SQUARE);
+
     osc.set_waveform(sonicforge::Waveform::TRIANGLE);
-    return osc.get_waveform() == sonicforge::Waveform::TRIANGLE;
+    EXPECT_EQ(osc.get_waveform(), sonicforge::Waveform::TRIANGLE);
 }
 
 /**
  * Fix #2 — set_waveform() must silently ignore invalid enum values and
  * leave the waveform unchanged.
  */
-bool test_set_waveform_invalid() {
+TEST(OscillatorParameters, SetWaveformInvalidIgnored) {
     sonicforge::Oscillator osc(sonicforge::Waveform::SAW, 440.0F);
     // Intentional out-of-range cast to test validation logic.
     // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     const auto invalid = static_cast<sonicforge::Waveform>(200U);
     osc.set_waveform(invalid);
-    return osc.get_waveform() == sonicforge::Waveform::SAW;
+
+    EXPECT_EQ(osc.get_waveform(), sonicforge::Waveform::SAW);
 }
 
-bool test_phase_reset() {
+TEST(OscillatorParameters, PhaseReset) {
     sonicforge::Oscillator osc(sonicforge::Waveform::SINE, 440.0F);
 
     for (int i = 0; i < 100; ++i) {
         (void)osc.process();
     }
-    if (osc.get_phase() <= 0.0F) {
-        return false;
-    }
+    EXPECT_GT(osc.get_phase(), 0.0F);
+
     osc.reset_phase();
-    if (!approx_equal(osc.get_phase(), 0.0F, 0.0001F)) {
-        return false;
-    }
-    return approx_equal(osc.process(), 0.0F, 0.001F);
+    EXPECT_NEAR(osc.get_phase(), 0.0F, 0.0001F);
+    EXPECT_NEAR(osc.process(), 0.0F, 0.001F);
 }
 
 // =============================================================================
 // Processing Tests
 // =============================================================================
 
-bool test_block_processing() {
+TEST(OscillatorProcessing, BlockMatchesSampleBySample) {
     sonicforge::Oscillator osc1(sonicforge::Waveform::SINE, 440.0F);
     sonicforge::Oscillator osc2(sonicforge::Waveform::SINE, 440.0F);
 
@@ -305,16 +225,13 @@ bool test_block_processing() {
 
     osc1.process_block(block_buffer.data(), block_size);
 
-    for (const float expected : block_buffer) {
+    for (std::size_t i = 0U; i < block_size; ++i) {
         const float actual = osc2.process();
-        if (!approx_equal(expected, actual, 0.00001F)) {
-            return false;
-        }
+        EXPECT_NEAR(block_buffer[i], actual, 0.00001F) << "at sample " << i;
     }
-    return true;
 }
 
-bool test_phase_wrapping() {
+TEST(OscillatorProcessing, PhaseWrapsAfterOneCycle) {
     constexpr float frequency = 100.0F;
     constexpr float sample_rate = 48000.0F;
 
@@ -326,7 +243,7 @@ bool test_phase_wrapping() {
     }
 
     const float phase = osc.get_phase();
-    return phase < 0.01F || phase > 0.99F;
+    EXPECT_TRUE(phase < 0.01F || phase > 0.99F) << "phase = " << phase;
 }
 
 // =============================================================================
@@ -338,7 +255,7 @@ bool test_phase_wrapping() {
  * (~2.0) of the naive implementation.  Each consecutive sample difference must
  * stay below 1.5 at all tested frequencies.
  */
-bool test_saw_polyblep_smoothing() {
+TEST(OscillatorPolyBLEP, SawHasSmoothedTransitions) {
     constexpr float sr = 48000.0F;
 
     for (const float freq : {100.0F, 1000.0F, 4800.0F}) {
@@ -348,20 +265,19 @@ bool test_saw_polyblep_smoothing() {
         const int samples = static_cast<int>(2.0F * sr / freq);
         for (int i = 0; i < samples; ++i) {
             const float cur = osc.process();
-            if (std::fabs(cur - prev) > 1.5F) {
-                return false;
-            }
+            ASSERT_LE(std::fabs(cur - prev), 1.5F)
+                << "freq=" << freq << " sample=" << i
+                << " delta=" << std::fabs(cur - prev);
             prev = cur;
         }
     }
-    return true;
 }
 
 /**
  * The PolyBLEP square wave must have smooth transitions at both discontinuity
  * points.  Consecutive sample deltas must never exceed 1.5.
  */
-bool test_square_polyblep_smoothing() {
+TEST(OscillatorPolyBLEP, SquareHasSmoothedTransitions) {
     constexpr float sr = 48000.0F;
 
     for (const float freq : {100.0F, 1000.0F, 4800.0F}) {
@@ -371,13 +287,12 @@ bool test_square_polyblep_smoothing() {
         const int samples = static_cast<int>(2.0F * sr / freq);
         for (int i = 0; i < samples; ++i) {
             const float cur = osc.process();
-            if (std::fabs(cur - prev) > 1.5F) {
-                return false;
-            }
+            ASSERT_LE(std::fabs(cur - prev), 1.5F)
+                << "freq=" << freq << " sample=" << i
+                << " delta=" << std::fabs(cur - prev);
             prev = cur;
         }
     }
-    return true;
 }
 
 // =============================================================================
@@ -389,7 +304,7 @@ bool test_square_polyblep_smoothing() {
  * within 1e-4 of std::sin.  Expected peak error is ~2.3e-6 (≈ −113 dB);
  * we use 1e-4 as a generous tolerance for compiler variation.
  */
-bool test_sine_lut_accuracy() {
+TEST(OscillatorSineLUT, AccuracyWithinTolerance) {
     constexpr float frequency = 480.0F;
     constexpr float sample_rate = 48000.0F;
     constexpr float dt = frequency / sample_rate;
@@ -411,51 +326,5 @@ bool test_sine_lut_accuracy() {
         }
     }
 
-    return max_error < 1e-4F;
-}
-
-}  // anonymous namespace
-
-// =============================================================================
-// Main
-// =============================================================================
-
-int main() {
-    std::cout << "SonicForge DSP — Oscillator Tests\n";
-    std::cout << "===================================\n\n";
-
-    std::cout << "Construction Tests:\n";
-    run_test("test_default_construction", test_default_construction);
-    run_test("test_custom_construction", test_custom_construction);
-    run_test("test_invalid_waveform_construction", test_invalid_waveform_construction);
-    run_test("test_invalid_frequency_construction", test_invalid_frequency_construction);
-
-    std::cout << "\nOutput Range Tests:\n";
-    run_test("test_sine_output_range", test_sine_output_range);
-    run_test("test_saw_output_range", test_saw_output_range);
-    run_test("test_square_output_range", test_square_output_range);
-    run_test("test_triangle_output_range", test_triangle_output_range);
-
-    std::cout << "\nWaveform Behaviour Tests:\n";
-    run_test("test_sine_starts_at_zero", test_sine_starts_at_zero);
-    run_test("test_sine_peak_position", test_sine_peak_position);
-
-    std::cout << "\nParameter Tests:\n";
-    run_test("test_set_frequency", test_set_frequency);
-    run_test("test_set_waveform", test_set_waveform);
-    run_test("test_set_waveform_invalid", test_set_waveform_invalid);
-    run_test("test_phase_reset", test_phase_reset);
-
-    std::cout << "\nProcessing Tests:\n";
-    run_test("test_block_processing", test_block_processing);
-    run_test("test_phase_wrapping", test_phase_wrapping);
-
-    std::cout << "\nPolyBLEP Anti-Aliasing Tests:\n";
-    run_test("test_saw_polyblep_smoothing", test_saw_polyblep_smoothing);
-    run_test("test_square_polyblep_smoothing", test_square_polyblep_smoothing);
-
-    std::cout << "\nLUT Sine Accuracy Tests:\n";
-    run_test("test_sine_lut_accuracy", test_sine_lut_accuracy);
-
-    return summarize();
+    EXPECT_LT(max_error, 1e-4F) << "LUT sine max error: " << max_error;
 }

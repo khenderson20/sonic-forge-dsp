@@ -125,12 +125,37 @@ endif()
 # Unit Tests
 # =============================================================================
 if(SONICFORGE_BUILD_TESTS)
+    # ── Fetch GoogleTest via CPM ────────────────────────────────────────────────
+    # CPM is bootstrapped here (inside the tests guard) so that configuring the
+    # core library without tests does NOT trigger any network activity.
+    # INSTALL_GTEST=OFF  — do not install GTest headers/libs alongside the
+    #                      project's own install target.
+    # gtest_force_shared_crt=ON  — on MSVC, match the shared runtime used by
+    #                              the rest of the project (avoids LNK4098).
+    include(cmake/get_cpm.cmake)
+    CPMAddPackage(
+        NAME googletest
+        GITHUB_REPOSITORY google/googletest
+        VERSION 1.15.2
+        OPTIONS
+            "INSTALL_GTEST OFF"
+            "gtest_force_shared_crt ON"
+    )
+
     enable_testing()
-    
+
     add_executable(oscillator_test tests/oscillator_test.cpp)
-    target_link_libraries(oscillator_test PRIVATE sonicforge)
-    
-    add_test(NAME OscillatorTest COMMAND oscillator_test)
+    target_link_libraries(oscillator_test PRIVATE sonicforge GTest::gtest_main)
+
+    # gtest_discover_tests runs the binary at build time to enumerate tests,
+    # giving one CTest entry per TEST() case.  It cannot execute on a cross-
+    # compile target, so fall back to static source parsing in that case.
+    include(GoogleTest)
+    if(CMAKE_CROSSCOMPILING)
+        gtest_add_tests(TARGET oscillator_test)
+    else()
+        gtest_discover_tests(oscillator_test)
+    endif()
 endif()
 
 # =============================================================================
@@ -178,7 +203,7 @@ message(STATUS "  Version:        ${PROJECT_VERSION}")
 message(STATUS "  C++ Standard:   ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type:     ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build Examples: ${SONICFORGE_BUILD_EXAMPLES}")
-message(STATUS "  Build Tests:    ${SONICFORGE_BUILD_TESTS}")
+message(STATUS "  Build Tests:    ${SONICFORGE_BUILD_TESTS} (GoogleTest via CPM)")
 message(STATUS "  Host Opt:       ${SONICFORGE_OPTIMIZE_FOR_HOST}")
 message(STATUS "")
 message(STATUS "  Build Web:      ${SONICFORGE_BUILD_WEB}")

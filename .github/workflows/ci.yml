@@ -88,6 +88,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ── CPM source cache ───────────────────────────────────────────
+      # Persists downloaded CPM packages across runs so CMake configure
+      # does not re-fetch GoogleTest (and future deps) on every job.
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/CPM
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
+          restore-keys: cpm-${{ runner.os }}-
+
       # ── Linux: install Clang-18 if needed ─────────────────────────
       - name: Install Clang-18 (Linux)
         if: runner.os == 'Linux' && matrix.compiler == 'clang'
@@ -104,6 +114,7 @@ jobs:
         env:
           CC:  ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
+          CPM_SOURCE_CACHE: ~/.cache/CPM
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
@@ -118,6 +129,8 @@ jobs:
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          CPM_SOURCE_CACHE: ~/.cache/CPM
         run: |
           cmake -B build `
             -G "Visual Studio 17 2022" -A x64 `
@@ -181,6 +194,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ── CPM source cache ─────────────────────────────────────────────
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/CPM
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
+          restore-keys: cpm-${{ runner.os }}-
+
       - name: Install Clang-18 toolchain
         run: |
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
@@ -188,11 +209,13 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y clang-18 clang-tidy-18
 
-      # Generate compile_commands.json required by clang-tidy
+      # Generate compile_commands.json required by clang-tidy.
+      # CPM_SOURCE_CACHE re-uses packages fetched by build-and-test.
       - name: Configure CMake (generate compile_commands.json)
         env:
           CC:  clang-18
           CXX: clang++-18
+          CPM_SOURCE_CACHE: ~/.cache/CPM
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Debug \
@@ -204,11 +227,16 @@ jobs:
       # Examples are intentionally excluded to keep warnings focused.
       # --warnings-as-errors='*' ensures new violations fail the job
       # before they land on main.
+      #
+      # We rely on compile_commands.json (via -p build) for all include
+      # paths — including GoogleTest headers fetched by CPM — so we do
+      # NOT override flags with a trailing `--`.  HeaderFilterRegex in
+      # .clang-tidy already restricts diagnostic reporting to project
+      # headers (.*sonicforge.*), keeping third-party GTest headers quiet.
       - name: Run clang-tidy
         run: |
           clang-tidy-18 \
             --warnings-as-errors='*' \
             -p build \
             src/oscillator.cpp \
-            tests/oscillator_test.cpp \
-            -- -std=c++17 -I include
+            tests/oscillator_test.cpp
