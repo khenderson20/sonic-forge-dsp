@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# =============================================================================
+# SonicForge DSP — Standalone Git Pre-commit Hook
+#
+# A self-contained alternative to the pre-commit framework.  No extra tooling
+# is required; install with:
+#
+#   bash scripts/install-hooks.sh
+#
+# Runs the same three checks as .github/workflows/ci.yml, in order:
+#
+#   1. clang-format  — staged C/C++ files must match .clang-format rules
+#   2. clang-tidy    — static analysis on src/ and tests/
+#   3. cmake build + ctest — incremental build + full test suite
+#
+# Selective skipping (set before git commit):
+#   SONICFORGE_SKIP_FORMAT=1   skip clang-format
+#   SONICFORGE_SKIP_TIDY=1     skip clang-tidy
+#   SONICFORGE_SKIP_TESTS=1    skip build + test
+#
+# Skip all hooks:
+#   git commit --no-verify
+#
+# Override cmake build directory:
+#   SONICFORGE_BUILD=/path/to/build git commit
+# =============================================================================
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# ── Terminal colours ──────────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' CYAN='' BOLD='' RESET=''
+fi
+
+header() { echo -e "\n${CYAN}${BOLD}── $* ${RESET}"; }
+ok()     { echo -e "${GREEN}  ✓ $*${RESET}"; }
+warn()   { echo -e "${YELLOW}  ! $*${RESET}"; }
+fail()   { echo -e "${RED}  ✗ $*${RESET}"; }
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+# Print the path to the first candidate binary found on PATH, or return 1.
+resolve_bin() {
+    local label="$1"; shift
+    for candidate in "$@"; do
+        if command -v "$candidate" &>/dev/null; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    warn "$label not found on PATH — skipping this check"
+    return 1
+}
+
+# Return path to a cmake build directory that contains CMakeCache.txt.
+# Checks SONICFORGE_BUILD override, then build-ninja/, then build/.
+find_build_dir() {
+    if [[ -n "${SONICFORGE_BUILD:-}" ]]; then
+        echo "${SONICFORGE_BUILD}"
+        return 0
+    fi
+    for candidate in \
+        "$REPO_ROOT/build-ninja" \
+        "$REPO_ROOT/build"; do
+        if [[ -f "$candidate/CMakeCache.txt" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    echo ""
+}
+
+# Collect staged C/C++ source files (excludes generated/vendored dirs).
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '\.(cpp|hpp|h)$' \
+    | grep -Ev '^(build[-/]|build-ninja/|_deps/)' \
+    || true)
+
+# Tracks whether any check fails; used for the final exit code.
+ALL_CLEAN=true
+
+# =============================================================================
+# 1. clang-format — staged file style check
+# =============================================================================
+header "clang-format"
+
+if [[ "${SONICFORGE_SKIP_FORMAT:-0}" == "1" ]]; then
+    warn "skipped (SONICFORGE_SKIP_FORMAT=1)"
+elif [[ -z "$STAGED" ]]; then
+    ok "no C/C++ files staged — nothing to check"
+elif CF=$(resolve_bin "clang-format" \
+        clang-format-18 clang-format-17 clang-format-16 clang-format); then
+
+    CF_VER=$("$CF" --version 2>&1 | head -1)
+    echo "  using: $CF_VER"
+    [[ "$CF_VER" != *"version 18"* ]] \
+        && warn "CI uses clang-format-18; minor differences possible"
+
+    FORMAT_FAILED=()
+    while IFS= read -r FILE; do
+        [[ -z "$FILE" ]] && continue
+        if ! "$CF" --dry-run --Werror "$FILE" 2>/dev/null; then
+            FORMAT_FAILED+=("$FILE")
+        fi
+    done <<< "$STAGED"
+
+    if [[ ${#FORMAT_FAILED[@]} -gt 0 ]]; then
+        fail "formatting violations:"
+        for F in "${FORMAT_FAILED[@]}"; do
+            echo "      $F"
+        done
+        echo ""
+        echo "  Fix with:"
+        echo "    $CF -i ${FORMAT_FAILED[*]}"
+        ALL_CLEAN=false
+    else
+        ok "all staged files are correctly formatted"
+    fi
+fi
+
+# =============================================================================
+# 2. clang-tidy — static analysis (mirrors CI exactly)
+# =============================================================================
+header "clang-tidy"
+
+if [[ "${SONICFORGE_SKIP_TIDY:-0}" == "1" ]]; then
+    warn "skipped (SONICFORGE_SKIP_TIDY=1)"
+elif CT=$(resolve_bin "clang-tidy" \
+        clang-tidy-18 clang-tidy-17 clang-tidy-16 clang-tidy); then
+
+    CT_VER=$("$CT" --version 2>&1 | head -1)
+    echo "  using: $CT_VER"
+    [[ "$CT_VER" != *"version 18"* ]] \
+        && warn "CI uses clang-tidy-18; some diagnostics may differ"
+
+    # Locate or create compile_commands.json.
+    BUILD_DIR=$(find_build_dir)
+    if [[ -z "$BUILD_DIR" || ! -f "$BUILD_DIR/compile_commands.json" ]]; then
+        echo "  compile_commands.json not found — running cmake configure..."
+        BUILD_DIR="$REPO_ROOT/build"
+        cmake -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DSONICFORGE_BUILD_TESTS=ON \
+            "$REPO_ROOT" 2>&1 | tail -6
+        echo "  configured: $BUILD_DIR"
+    else
+        echo "  build dir: $BUILD_DIR"
+    fi
+
+    # Analyse the same fixed paths as CI (not just staged files).
+    if "$CT" \
+        --warnings-as-errors='*' \
+        -p "$BUILD_DIR" \
+        "$REPO_ROOT/src/oscillator.cpp" \
+        "$REPO_ROOT/tests/oscillator_test.cpp"; then
+        ok "no violations found"
+    else
+        fail "clang-tidy violations detected"
+        ALL_CLEAN=false
+    fi
+fi
+
+# =============================================================================
+# 3. cmake build + ctest
+# =============================================================================
+header "cmake build and test"
+
+if [[ "${SONICFORGE_SKIP_TESTS:-0}" == "1" ]]; then
+    warn "skipped (SONICFORGE_SKIP_TESTS=1)"
+else
+    BUILD_DIR=$(find_build_dir)
+    BUILD_START=$(date +%s)
+
+    # Auto-configure if no build directory exists.
+    if [[ -z "$BUILD_DIR" || ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
+        echo "  no build found — configuring cmake..."
+        BUILD_DIR="$REPO_ROOT/build"
+        cmake -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DSONICFORGE_BUILD_TESTS=ON \
+            -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF \
+            "$REPO_ROOT"
+    fi
+
+    echo "  build dir: $BUILD_DIR"
+
+    echo "  compiling..."
+    if ! cmake --build "$BUILD_DIR" --parallel 2>&1; then
+        fail "build failed"
+        ALL_CLEAN=false
+    else
+        echo "  running tests..."
+        if ! ctest --test-dir "$BUILD_DIR" --output-on-failure; then
+            fail "one or more tests failed"
+            ALL_CLEAN=false
+        else
+            BUILD_END=$(date +%s)
+            ok "all tests passed ($((BUILD_END - BUILD_START))s)"
+        fi
+    fi
+fi
+
+# =============================================================================
+# Result
+# =============================================================================
+echo ""
+if [[ "$ALL_CLEAN" == "true" ]]; then
+    echo -e "${GREEN}${BOLD}  All pre-commit checks passed.${RESET}"
+    exit 0
+else
+    echo -e "${RED}${BOLD}  Pre-commit checks FAILED — commit blocked.${RESET}"
+    echo ""
+    echo "  Options:"
+    echo "    Bypass all checks:       git commit --no-verify"
+    echo "    Skip format only:        SONICFORGE_SKIP_FORMAT=1 git commit"
+    echo "    Skip tidy only:          SONICFORGE_SKIP_TIDY=1   git commit"
+    echo "    Skip build+test only:    SONICFORGE_SKIP_TESTS=1  git commit"
+    exit 1
+fi

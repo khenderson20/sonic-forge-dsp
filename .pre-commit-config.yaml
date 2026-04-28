@@ -1,0 +1,71 @@
+# =============================================================================
+# SonicForge DSP — Pre-commit hook configuration
+#
+# Mirrors the three CI jobs defined in .github/workflows/ci.yml:
+#
+#   Hook               CI job             What it checks
+#   ─────────────────  ─────────────────  ────────────────────────────────────
+#   clang-format       clang-format       Staged C/C++ files match .clang-format
+#   clang-tidy         clang-tidy         Static analysis on src/ and tests/
+#   cmake-build-test   build-and-test     Incremental build + full test suite
+#
+# Setup (one-time per clone):
+#   pip install pre-commit        # or: brew install pre-commit
+#   pre-commit install
+#
+# Verify all hooks pass without committing:
+#   pre-commit run --all-files
+#
+# Skip a single hook for a WIP commit:
+#   SKIP=cmake-build-test git commit -m "wip: ..."
+#
+# Skip all hooks (emergency bypass — prefer the above when possible):
+#   git commit --no-verify
+# =============================================================================
+
+repos:
+  - repo: local
+    hooks:
+
+      # ── 1. clang-format ────────────────────────────────────────────────────
+      # Checks that every staged C/C++ file matches the project's .clang-format
+      # rules.  Only staged files are inspected so the check stays fast.
+      # Mirrors: clang-format-18 --dry-run --Werror <files>
+      - id: clang-format
+        name: "clang-format: style check"
+        language: system
+        entry: bash scripts/pre-commit/check-format.sh
+        types_or: [c++, c]
+        stages: [pre-commit]
+
+      # ── 2. clang-tidy ──────────────────────────────────────────────────────
+      # Runs static analysis on the core library and test translation units
+      # whenever any file under src/, tests/, or include/ is staged.
+      # Always analyses the same two fixed paths as CI (not just changed files)
+      # so the analysis is complete and consistent.
+      # Requires compile_commands.json; auto-configures cmake if absent.
+      # Mirrors: clang-tidy-18 --warnings-as-errors='*' -p build <files>
+      - id: clang-tidy
+        name: "clang-tidy: static analysis"
+        language: system
+        entry: bash scripts/pre-commit/check-tidy.sh
+        pass_filenames: false
+        files: ^(src|tests|include)/
+        types_or: [c++, c]
+        stages: [pre-commit]
+
+      # ── 3. cmake build + ctest ─────────────────────────────────────────────
+      # Incrementally rebuilds the project and runs the full test suite.
+      # Runs on every commit (always_run: true) to guarantee no commit
+      # introduces a build break or test regression.
+      # Mirrors: cmake --build build --parallel && ctest --output-on-failure
+      #
+      # This is the most time-consuming hook (~10-30s on a warm build).
+      # Skip it for WIP commits with: SKIP=cmake-build-test git commit
+      - id: cmake-build-test
+        name: "cmake: build and test"
+        language: system
+        entry: bash scripts/pre-commit/run-tests.sh
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
