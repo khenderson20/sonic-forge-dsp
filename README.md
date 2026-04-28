@@ -2,7 +2,7 @@
   ███████╗ ██████╗ ███╗   ██╗██╗ ██████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
   ██╔════╝██╔═══██╗████╗  ██║██║██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
   ███████╗██║   ██║██╔██╗ ██║██║██║     █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
-  ╚════██║██║   ██║██║╚██╗██║██║██║     ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
+  ═════██║██║   ██║██║╚██╗██║██║██║     ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
   ███████║╚██████╔╝██║ ╚████║██║╚██████╗██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
   ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝ ╚═════╝╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
                               ╔═══════════════════╗
@@ -10,44 +10,53 @@
                               ╚═══════════════════╝
 ```
 
-# 🎛️ SonicForge DSP
+# SonicForge DSP
 
-A high-performance C++ DSP library that compiles natively **and** to WebAssembly for browser-based 3D audio visualization.
+A lightweight C++ oscillator library with WebAssembly support for browser-based audio and visualization.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## 📖 Overview
+## Overview
 
-**SonicForge DSP** is a lightweight C++ framework focused on low-latency signal generation and processing. It serves as a showcase of modern systems programming practices, specifically addressing the unique constraints of real-time audio—where heap allocation and thread-blocking are strictly avoided to ensure signal stability.
+**SonicForge DSP** provides a single, well-tested `Oscillator` class that generates band-limited waveforms (sine, saw, square, triangle) suitable for real-time audio. The processing path performs zero heap allocation and uses `std::atomic` for thread-safe parameter changes.
 
-The library extends beyond native audio pipelines with full WebAssembly support, enabling real-time DSP chains to run inside browser AudioWorklet contexts paired with Three.js-powered 3D wavetable visualization.
+The library compiles natively on Linux, macOS, and Windows, and can be built to WebAssembly via Emscripten for use in browser AudioWorklet contexts. A companion Three.js visualization renders waveforms in 3D — note that the visualization generates its own waveforms in JavaScript and is not fed from the Wasm DSP output.
 
-### ✨ Key Features
+### Capabilities
 
-| Category | Details |
-|----------|---------|
-| **🎵 Waveform Generation** | Sine, Saw, Square, Triangle oscillators |
-| **⚡ Real-time Processing** | Sub-sample parameter modulation |
-| **🔗 Modular Architecture** | Chain oscillators, filters, envelopes |
-| **📦 Zero-Copy Design** | Efficient buffer processing |
-| **🔒 Thread-Safe API** | Safe parameter changes from any thread |
-| **🌐 WebAssembly AudioWorklet** | Run DSP chains directly in the browser |
-| **🎨 3D Visualization** | Interactive browser-based wavetable rendering via Three.js |
+| Feature | Details |
+|---------|---------|
+| **Waveform generation** | Sine (4096-entry LUT with linear interpolation), saw and square (PolyBLEP anti-aliased), triangle |
+| **Block processing** | `process_block(float* buffer, size_t num_samples)` writes into a caller-supplied buffer |
+| **Sample-by-sample processing** | `process()` returns one sample at a time for custom buffer layouts |
+| **Thread-safe parameter setters** | `set_frequency()`, `set_waveform()`, `set_sample_rate()` use `std::atomic` — safe to call from any thread while processing |
+| **Phase control** | `get_phase()`, `set_phase()`, `reset_phase()` — not thread-safe with concurrent `process()` calls |
+| **WebAssembly** | Compiles to Wasm via Emscripten with a C bridge (`extern "C"`) for AudioWorklet integration |
+| **3D visualization** | Three.js demo page in `web/public/` renders interactive 3D waveforms (JS-generated, independent from Wasm audio output) |
 
-### 💡 Technical Highlights
+### What this library does NOT provide
 
-- **🔧 Real-time Safe Architecture:** Lock-free and allocation-avoidant patterns prevent priority inversion and audio glitches.
-- **💻 Modern C++ Standard:** Leverages C++17/20 features including smart pointers, `std::atomic`, and templates.
-- **🖥️ Cross-Platform:** Builds natively on Linux, macOS, and Windows; compiles to WebAssembly via Emscripten.
-- **🌍 Browser-Native Audio:** AudioWorklet integration for sample-accurate processing without main-thread interference.
+- **No filters** — there are no lowpass, highpass, or other filter classes
+- **No envelopes** — there is no ADSR or envelope generator
+- **No DSP chaining** — there is no `connect()`, node graph, or modular routing API. Each `Oscillator` is standalone
+- **No polyphony management** — there is no voice pool or voice stealing. You manage multiple oscillator instances yourself
+- **No wavetable oscillator** — the C++ library generates waveforms algorithmically; it does not load or scan wavetables
+- **No sub-sample parameter interpolation** — atomic parameter changes take effect at the next sample boundary; there is no ramping or fractional-delay interpolation
+
+### Technical details
+
+- **No heap allocation in the audio path** — `process()` and `process_block()` perform zero dynamic allocation. The sine LUT is a compile-time `const std::array`
+- **Lock-free parameter access** — the three mutable state members (`frequency_`, `sample_rate_`, `waveform_`) are `std::atomic` and accessed with `std::memory_order_relaxed` in the processing loop. This avoids mutexes but provides no ordering guarantees beyond atomicity
+- **C++17** — requires a conforming C++17 compiler
+- **Version 0.1.0** — early stage; the public API may change
 
 ---
 
-## 📋 Prerequisites
+## Prerequisites
 
-### 🔨 Native Build
+### Native Build
 
 | Requirement | Version |
 |-------------|---------|
@@ -55,7 +64,7 @@ The library extends beyond native audio pipelines with full WebAssembly support,
 | CMake | 3.15+ |
 | Build System | Make or Ninja |
 
-### 🌐 WebAssembly Build
+### WebAssembly Build
 
 | Requirement | Version |
 |-------------|---------|
@@ -65,9 +74,9 @@ The library extends beyond native audio pipelines with full WebAssembly support,
 
 ---
 
-## 📦 Installation
+## Installation
 
-### 🔨 Native Build
+### Native Build
 
 ```bash
 # Clone the repository
@@ -83,7 +92,7 @@ make -j$(nproc)
 ctest --output-on-failure
 ```
 
-#### 🚀 Build with Ninja (Recommended)
+#### Build with Ninja (Recommended)
 
 ```bash
 mkdir build && cd build
@@ -91,7 +100,7 @@ cmake -G Ninja ..
 ninja
 ```
 
-#### 🔧 Build Types
+#### Build Types
 
 ```bash
 # Release build (optimized, -O3 -march=native)
@@ -101,7 +110,7 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake -DCMAKE_BUILD_TYPE=Debug ..
 ```
 
-### 🌐 WebAssembly Build
+### WebAssembly Build
 
 #### Option 1: Via root CMake (recommended)
 
@@ -125,9 +134,9 @@ For detailed web-specific instructions, see [web/README.md](web/README.md).
 
 ---
 
-## 🚀 Usage
+## Usage
 
-### 📝 Basic Example
+### Basic Example
 
 ```cpp
 #include <sonicforge/oscillator.hpp>
@@ -149,7 +158,7 @@ int main() {
 }
 ```
 
-### 🔗 Linking to Your Project
+### Linking to Your Project
 
 **Using CMake with pkg-config:**
 
@@ -168,9 +177,9 @@ g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-### 🔧 CMake Build Options
+### CMake Build Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -181,51 +190,26 @@ g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
 
 ---
 
-## 📊 Performance Benchmarks
-
-All benchmarks run on **AMD Ryzen 7 5800X**, Fedora 40, 48kHz sample rate:
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **⏱️ Latency** | < 1.5ms | 64-sample buffer |
-| **🔋 Oscillator CPU** | ~0.02% | Per-voice sine wave |
-| **🎼 Polyphony** | 64+ voices | < 3% CPU total |
-| **🎛️ Parameter Modulation** | Sub-sample | Lock-free atomic updates |
-| **🌐 Wasm Overhead** | < 5% | vs. native, AudioWorklet |
-
----
-
-## 🎯 What You Can Build
-
-- **🎹 Modular Synthesizers:** Chain oscillators, filters, and envelopes
-- **🎚️ Audio Effects:** Process live input with custom DSP chains
-- **🎮 Real-time Generators:** Procedural audio for games and interactive media
-- **🔌 Audio Plugins:** VST/LV2 plugins (with additional wrapper code)
-- **🌐 Browser-Based Audio Tools:** Deploy DSP chains to the web with AudioWorklet
-- **🎨 3D Audio Visualizations:** Render wavetables and spectrograms with Three.js
-
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 sonic-forge-dsp/
-├── include/sonicforge/      # Public API headers
-│   └── oscillator.hpp
+├── include/sonicforge/      # Public API header
+│   └── oscillator.hpp       # Single class: sonicforge::Oscillator
 ├── src/                     # Implementation
 │   └── oscillator.cpp
-├── tests/                   # Unit tests
+├── tests/                   # Unit tests (17 cases, custom test harness)
 │   └── oscillator_test.cpp
 ├── examples/                # Example programs
-│   ├── sine_example.cpp
-│   └── wav_writer_example.cpp
+│   ├── sine_example.cpp     # Outputs raw floats to stdout (pipeable to aplay)
+│   └── wav_writer_example.cpp # Generates a WAV file with fade-in/fade-out
 ├── cmake/                   # CMake helpers & pkg-config
 │   └── sonicforge.pc.in
 ├── web/                     # WebAssembly build + 3D visualization
 │   ├── CMakeLists.txt
-│   ├── src/sonicforge_worklet.cpp
-│   └── public/              # Three.js visualization
-├── CMakeLists.txt           # Native build configuration
+│   ├── src/sonicforge_worklet.cpp   # C bridge for Wasm
+│   └── public/              # Three.js visualization + AudioWorklet processor
+├── CMakeLists.txt           # Root build configuration
 ├── Doxyfile                 # Documentation generator config
 ├── .clang-format            # Code style configuration
 └── .clang-tidy              # Static analysis rules
@@ -233,11 +217,11 @@ sonic-forge-dsp/
 
 ---
 
-## ✅ Code Quality
+## Code Quality
 
 SonicForge DSP uses **clang-format** for automated code formatting and **clang-tidy** for static analysis. Both tools are configured at the repository root and enforced in CI.
 
-### 📌 Quick Reference
+### Quick Reference
 
 **Format all C++ files:**
 
@@ -266,7 +250,7 @@ clang-tidy -p build src/oscillator.cpp
 clang-tidy --warnings-as-errors='*' -p build src/oscillator.cpp tests/oscillator_test.cpp
 ```
 
-### 📐 Configuration Summary
+### Configuration Summary
 
 **clang-format** (based on LLVM style):
 
@@ -289,7 +273,7 @@ clang-tidy --warnings-as-errors='*' -p build src/oscillator.cpp tests/oscillator
 | `readability-*` | Naming conventions, braces |
 | `clang-analyzer-*` | Null dereferences, memory leaks |
 
-### 🪝 Enforcing in Pre-commit Hooks
+### Enforcing in Pre-commit Hooks
 
 **Shell-based hook (`.git/hooks/pre-commit`):**
 
@@ -303,19 +287,19 @@ STAGED=$(git diff --cached --name-only --diff-filter=ACM \
 
 [ -z "$STAGED" ] && exit 0
 
-echo "🔎  Running clang-format check..."
+echo "Running clang-format check..."
 for FILE in $STAGED; do
   clang-format --dry-run --Werror "$FILE" || {
-    echo "  ❌  $FILE is not formatted."
+    echo "  $FILE is not formatted."
     echo "  Run: clang-format -i $FILE"
     exit 1
   }
 done
 
 if [ -f "build/compile_commands.json" ]; then
-  echo "🔎  Running clang-tidy check..."
+  echo "Running clang-tidy check..."
   clang-tidy --warnings-as-errors='*' -p build $STAGED || {
-    echo "  ❌  clang-tidy found violations."
+    echo "  clang-tidy found violations."
     exit 1
   }
 fi
@@ -341,7 +325,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-### 🤖 CI Enforcement
+### CI Enforcement
 
 Both tools run automatically on every push and pull request via GitHub Actions (`.github/workflows/ci.yml`):
 
@@ -353,7 +337,7 @@ Both tools run automatically on every push and pull request via GitHub Actions (
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Generate API documentation with Doxygen:
 
@@ -365,7 +349,7 @@ Output will be available in `docs/html/`.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please follow these steps:
 
@@ -375,7 +359,7 @@ Contributions are welcome! Please follow these steps:
 4. Push to the branch (`git push origin feature/your-feature`)
 5. Open a pull request
 
-### 📏 Coding Standards
+### Coding Standards
 
 - Follow modern C++ best practices (C++17, allocation-free audio paths)
 - Format all files with `clang-format` before committing
@@ -385,24 +369,13 @@ Contributions are welcome! Please follow these steps:
 
 ---
 
-## 🆕 What's New
-
-### 📢 Recent Changes
-
-- **🌐 WebAssembly DSP Bridge:** Full Emscripten build pipeline for browser environments
-- **🎧 AudioWorklet Processor:** `sonicforge_worklet.cpp` provides a sample-accurate audio processing node
-- **🎨 3D Wavetable Visualization:** Three.js-powered real-time renderer in `web/public/`
-- **🔧 Web CMake Toolchain:** Dedicated `web/CMakeLists.txt` for streamlined Wasm builds
-
----
-
-## ⚖️ License
+## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 💖 Acknowledgments
+## Acknowledgments
 
 - Inspired by the modular synthesis community
 - Built with insights from the Linux audio development ecosystem
