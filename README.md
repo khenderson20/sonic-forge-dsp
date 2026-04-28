@@ -31,11 +31,22 @@ A high-performance, real-time C++ Digital Signal Processing (DSP) library design
 Generate a 440Hz sine wave:
 
 ```bash
+# Build the project first (if not already built)
+mkdir -p build && cd build
+cmake .. && make
+
+# Generate and play audio (requires aplay or similar audio player)
 cd examples
-./sine_example
+../build/sine_example | aplay -f FLOAT_LE -r 48000 -c 1
 ```
 
-Outputs a 5-second 440Hz tone to `output.wav`
+> **Note**: The example outputs raw audio data to stdout. You must pipe it to an audio player like `aplay` (Linux) to hear the sound. If you don't hear anything, try:
+> - Checking your volume levels with `alsamixer`
+> - Specifying your audio device explicitly: `aplay -D plughw:0,0 -f FLOAT_LE -r 48000 -c 1`
+> - Listing available devices with `aplay -l`
+> - Using alternative players like `paplay` (PulseAudio) or `ffplay`
+
+Outputs a 5-second 440Hz tone to `output.wav` when using the wav_writer_example instead.
 
 ## 🚀 Overview
 
