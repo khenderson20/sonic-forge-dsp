@@ -99,13 +99,13 @@ static sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> g_delay{DEL
 static sonicforge::SmoothedValue<sonicforge::SmoothingMode::Multiplicative> g_freq_smooth;
 
 // Per-module enable flags (all off by default).
-static bool g_filter_enabled    = false;
+static bool g_filter_enabled = false;
 static bool g_waveshaper_enabled = false;
-static bool g_delay_enabled     = false;
-static bool g_glide_enabled     = false;
+static bool g_delay_enabled = false;
+static bool g_glide_enabled = false;
 
 // Delay state: time (ms), feedback, and cross-quantum wet tracker.
-static float g_delay_time_ms  = 250.0F;
+static float g_delay_time_ms = 250.0F;
 static float g_delay_feedback = 0.30F;
 static float g_delay_prev_wet = 0.0F;
 
@@ -490,13 +490,15 @@ void audio_destroy() {
 EMSCRIPTEN_KEEPALIVE
 void audio_set_filter_enabled(int on) {
     g_filter_enabled = (on != 0);
-    if (!g_filter_enabled) g_filter.reset();
+    if (!g_filter_enabled)
+        g_filter.reset();
 }
 
 /** Set the filter mode: 0=Lowpass 1=Highpass 2=Bandpass 3=Notch. */
 EMSCRIPTEN_KEEPALIVE
 void audio_set_filter_mode(int mode) {
-    if (mode < 0 || mode > 3) return;
+    if (mode < 0 || mode > 3)
+        return;
     g_filter.set_mode(static_cast<sonicforge::FilterMode>(mode));
 }
 
@@ -525,7 +527,8 @@ void audio_set_waveshaper_enabled(int on) {
 /** Set the waveshaper shape: 0=Tanh 1=Poly 2=HardClip 3=WaveFold. */
 EMSCRIPTEN_KEEPALIVE
 void audio_set_waveshaper_shape(int shape) {
-    if (shape < 0 || shape > 3) return;
+    if (shape < 0 || shape > 3)
+        return;
     g_waveshaper.set_shape(static_cast<sonicforge::WaveshaperShape>(shape));
 }
 
@@ -552,7 +555,8 @@ void audio_set_delay_enabled(int on) {
 /** Set the delay time in milliseconds. Clamped to [0, DELAY_MAX_SAMPLES/sr * 1000]. */
 EMSCRIPTEN_KEEPALIVE
 void audio_set_delay_time_ms(float ms) {
-    if (ms < 0.0F) ms = 0.0F;
+    if (ms < 0.0F)
+        ms = 0.0F;
     g_delay_time_ms = ms;
     s_update_delay_samples();
 }
