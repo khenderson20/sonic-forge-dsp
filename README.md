@@ -1,5 +1,7 @@
 <p align="center">
   <img src="examples/images/sonic-forge-dsp.png" alt="SonicForge DSP" width="720">
+  <br>
+  <img src="examples/images/sonic-forge-dsp-0.1.0.png" alt="SonicForge DSP 0.1.0" width="720">
 </p>
 
 # SonicForge DSP
