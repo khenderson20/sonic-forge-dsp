@@ -13,7 +13,7 @@ A lightweight C++ oscillator library with WebAssembly support for browser-based 
 
 ## Overview
 
-**SonicForge DSP** provides a single, well-tested `Oscillator` class that generates band-limited waveforms (sine, saw, square, triangle) suitable for real-time audio. The processing path performs zero heap allocation and uses `std::atomic` for thread-safe parameter changes.
+**SonicForge DSP** provides a collection of real-time audio processing modules: a band-limited `Oscillator`, a resonant `StateVariableFilter`, a `DelayLine` with fractional-sample interpolation, a `Waveshaper` for distortion/wavefolding, and a `SmoothedValue` utility for click-free parameter modulation. All processing paths perform zero heap allocation and use `std::atomic` for thread-safe parameter changes.
 
 The library compiles natively on Linux, macOS, and Windows, and can be built to WebAssembly via Emscripten for use in browser AudioWorklet contexts. A companion Three.js visualization renders waveforms in 3D — note that the visualization generates its own waveforms in JavaScript and is not fed from the Wasm DSP output.
 
@@ -22,29 +22,30 @@ The library compiles natively on Linux, macOS, and Windows, and can be built to 
 | Feature | Details |
 |---------|---------|
 | **Waveform generation** | Sine (4096-entry LUT with linear interpolation), saw and square (PolyBLEP anti-aliased), triangle |
+| **State variable filter** | Resonant lowpass, highpass, bandpass, notch (Cytomic/Zavalishin ZDF topology) |
+| **Delay line** | Fractional-sample delay with none, linear, and 3rd-order Lagrange interpolation |
+| **Waveshaper** | tanh, polynomial soft clip, hard clip, Buchla-style wavefolder |
+| **Parameter smoothing** | Linear and multiplicative (exponential) sub-sample interpolation to eliminate clicks |
 | **Block processing** | `process_block(float* buffer, size_t num_samples)` writes into a caller-supplied buffer |
 | **Sample-by-sample processing** | `process()` returns one sample at a time for custom buffer layouts |
-| **Thread-safe parameter setters** | `set_frequency()`, `set_waveform()`, `set_sample_rate()` use `std::atomic` — safe to call from any thread while processing |
-| **Phase control** | `get_phase()`, `set_phase()`, `reset_phase()` — not thread-safe with concurrent `process()` calls |
+| **Thread-safe parameter setters** | Atomic setters on Oscillator and StateVariableFilter — safe to call from any thread while processing |
 | **WebAssembly** | Compiles to Wasm via Emscripten with a C bridge (`extern "C"`) for AudioWorklet integration |
 | **3D visualization** | Three.js demo page in `web/public/` renders interactive 3D waveforms (JS-generated, independent from Wasm audio output) |
 
 ### What this library does NOT provide
 
-- **No filters** — there are no lowpass, highpass, or other filter classes
 - **No envelopes** — there is no ADSR or envelope generator
-- **No DSP chaining** — there is no `connect()`, node graph, or modular routing API. Each `Oscillator` is standalone
+- **No DSP chaining** — there is no `connect()`, node graph, or modular routing API. Each module is standalone
 - **No polyphony management** — there is no voice pool or voice stealing. You manage multiple oscillator instances yourself
 - **No wavetable oscillator** — the C++ library generates waveforms algorithmically; it does not load or scan wavetables
-- **No sub-sample parameter interpolation** — atomic parameter changes take effect at the next sample boundary; there is no ramping or fractional-delay interpolation
 
 ### Technical Details
 
 - **No heap allocation in the audio path** — `process()` and `process_block()` perform zero dynamic allocation. The sine LUT is a compile-time `const std::array`
-- **Lock-free parameter access** — the three mutable state members (`frequency_`, `sample_rate_`, `waveform_`) are `std::atomic` and accessed with `std::memory_order_relaxed` in the processing loop
+- **Lock-free parameter access** — mutable state members on Oscillator and StateVariableFilter are `std::atomic` and accessed with `std::memory_order_relaxed` in the processing loop
 - **C++17** — requires a conforming C++17 compiler
 - **Dependencies** — the core library has zero runtime dependencies. [GoogleTest](https://github.com/google/googletest) is fetched automatically at configure time via [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) and is only required when `SONICFORGE_BUILD_TESTS=ON`
-- **Version 0.1.0** — early stage; the public API may change
+- **Version 0.2.0** — the public API is stabilising but may still change
 
 ---
 
@@ -179,6 +180,128 @@ The examples write raw float audio that can be piped directly to a system audio 
 ./build/wav_writer_example output.wav 440 2.0
 ```
 
+### SmoothedValue (gap #6 — sub-sample parameter interpolation)
+
+Instant parameter jumps cause clicks. `SmoothedValue` ramps changes over a configurable duration.
+
+```cpp
+#include <sonicforge/smoothed_value.hpp>
+
+// Linear smoothing for gain (constant delta per sample)
+sonicforge::SmoothedValue<sonicforge::SmoothingMode::Linear> gain;
+gain.reset(0.0F, 48000.0F);
+gain.set_ramp_duration(0.01F);  // 10 ms ramp
+
+gain.set_target(0.8F);          // begin ramping
+
+// In audio callback:
+for (int i = 0; i < 256; ++i) {
+    float g = gain.process();   // advances ramp by one sample
+    buffer[i] *= g;
+}
+
+// Multiplicative smoothing for frequency (constant ratio per sample)
+sonicforge::SmoothedValue<sonicforge::SmoothingMode::Multiplicative> freq;
+freq.reset(440.0F, 48000.0F);
+freq.set_ramp_duration(0.02F);
+freq.set_target(880.0F);        // ramps exponentially to 880 Hz
+```
+
+### StateVariableFilter (gap #1 — resonant filter)
+
+A zero-delay feedback (ZDF) filter with atomic parameter updates:
+
+```cpp
+#include <sonicforge/state_variable_filter.hpp>
+
+sonicforge::StateVariableFilter filter{
+    sonicforge::FilterMode::Lowpass, 2000.0F, 0.5F  // mode, cutoff, resonance
+};
+filter.set_sample_rate(48000.0F);
+
+// In audio callback:
+filter.process_block(buffer, 256);
+
+// Modulate from UI thread (thread-safe):
+filter.set_cutoff_hz(4000.0F);
+filter.set_resonance(0.7F);
+filter.set_mode(sonicforge::FilterMode::Bandpass);
+```
+
+### Waveshaper
+
+Transfer functions and a block processor for distortion:
+
+```cpp
+#include <sonicforge/waveshaper.hpp>
+
+// Free functions (stateless, inline):
+float sample = sonicforge::soft_clip_tanh(input * drive);
+sample = sonicforge::soft_clip_poly(input * drive);
+sample = sonicforge::hard_clip(input * drive);
+sample = sonicforge::wavefold_buchla(input * drive);  // Buchla 259-style fold
+
+// Block processor:
+sonicforge::WaveshaperProcessor ws{sonicforge::WaveshaperShape::Tanh, 3.0F};
+ws.process_block(buffer, 256);
+ws.set_shape(sonicforge::WaveshaperShape::WaveFold);
+ws.process_block(buffer, 256);
+```
+
+### DelayLine
+
+Fractional-sample delay with three interpolation modes:
+
+```cpp
+#include <sonicforge/delayline.hpp>
+
+// Linear interpolation (good for chorus/flanger)
+sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> dl{24000};  // 0.5 s at 48 kHz
+dl.set_delay(4800.0F);   // 100 ms
+dl.set_feedback(0.4F);
+
+dl.process_block(buffer, 256);  // in-place with feedback
+
+// Read without feedback (modulation effects):
+float tap = dl.read(2400.5F);   // fractional read
+
+// Higher quality — 3rd-order Lagrange:
+sonicforge::DelayLine<sonicforge::DelayInterpolation::Lagrange3rd> dl_hq{24000};
+```
+
+### Complete Synth Chain Example
+
+Combining all modules into a signal path:
+
+```cpp
+#include <sonicforge/oscillator.hpp>
+#include <sonicforge/smoothed_value.hpp>
+#include <sonicforge/state_variable_filter.hpp>
+#include <sonicforge/waveshaper.hpp>
+#include <sonicforge/delayline.hpp>
+
+sonicforge::Oscillator osc{sonicforge::Waveform::SAW, 440.0F, 48000.0F};
+
+sonicforge::SmoothedValue<sonicforge::SmoothingMode::Multiplicative> cutoff_smooth;
+cutoff_smooth.reset(2000.0F, 48000.0F);
+cutoff_smooth.set_ramp_duration(0.05F);
+
+sonicforge::StateVariableFilter filter{
+    sonicforge::FilterMode::Lowpass, 2000.0F, 0.3F, 48000.0F};
+
+sonicforge::WaveshaperProcessor ws{sonicforge::WaveshaperShape::Tanh, 2.0F};
+
+sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> delay{24000};
+delay.set_delay(4800.0F);
+delay.set_feedback(0.3F);
+
+float buffer[256];
+osc.process_block(buffer, 256);       // 1. Oscillator
+filter.process_block(buffer, 256);    // 2. Filter
+ws.process_block(buffer, 256);        // 3. Waveshaper
+delay.process_block(buffer, 256);     // 4. Delay
+```
+
 ### Linking to Your Project
 
 **Using CMake with pkg-config:**
@@ -213,17 +336,16 @@ g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
 
 ## Testing
 
-Tests are written with [GoogleTest](https://github.com/google/googletest) and fetched automatically at configure time via CPM.cmake. The test suite covers 19 cases across 6 suites.
+Tests are written with [GoogleTest](https://github.com/google/googletest) and fetched automatically at configure time via CPM.cmake. The test suite covers 50+ cases across 11 suites.
 
-| Suite | Cases | What is tested |
-|-------|-------|----------------|
-| `OscillatorConstruction` | 4 | Default values, custom parameters, invalid waveform/frequency fallback |
-| `OscillatorOutputRange` | 4 | All waveforms stay within `[-1, 1]` for one second of output |
-| `OscillatorWaveform` | 2 | Sine starts at zero, peak lands at quarter-period |
-| `OscillatorParameters` | 4 | `set_frequency`, `set_waveform`, invalid waveform ignored, phase reset |
-| `OscillatorProcessing` | 2 | Block path matches sample-by-sample path; phase wraps correctly |
-| `OscillatorPolyBLEP` | 2 | Saw and square transitions stay smooth across 100 Hz / 1 kHz / 4.8 kHz |
-| `OscillatorSineLUT` | 1 | LUT output is within `1e-4` of `std::sin` (expected peak error ≈ −113 dB) |
+| Module | Suites | Cases | What is tested |
+|--------|--------|-------|----------------|
+| **Oscillator** | 7 | 19 | Construction, output range, waveform accuracy, parameters, processing, PolyBLEP, sine LUT |
+| **SmoothedValue** | 3 | 7 | Construction, linear/multiplicative ramping, snap, process_block |
+| **StateVariableFilter** | 4 | 10 | Construction, LP/HP attenuation, DC pass-through, parameter clamping, reset |
+| **Waveshaper** | 3 | 8 | Transfer function bounds, processor with drive, all shapes, null safety |
+| **DelayLine** | 4 | 10 | Integer delay, fractional delay (linear + Lagrange3rd), feedback, reset, process_block |
+| **Integration** | 1 | 1 | Full chain: oscillator → SVF → waveshaper → delay |
 
 ### Running Tests
 
@@ -241,12 +363,19 @@ Each `TEST()` case registers as a separate CTest entry via `gtest_discover_tests
 
 ```
 sonic-forge-dsp/
-├── include/sonicforge/          # Public API header
-│   └── oscillator.hpp           # Single class: sonicforge::Oscillator
+├── include/sonicforge/          # Public API headers
+│   ├── oscillator.hpp           # Band-limited oscillator (PolyBLEP + LUT)
+│   ├── smoothed_value.hpp       # Sub-sample parameter interpolation (header-only)
+│   ├── state_variable_filter.hpp# Resonant LP/HP/BP/Notch filter (ZDF)
+│   ├── waveshaper.hpp           # Distortion/wavefolder transfer functions (header-only)
+│   └── delayline.hpp            # Fractional-sample delay line
 ├── src/                         # Implementation
-│   └── oscillator.cpp
-├── tests/                       # Unit tests (GoogleTest, 19 cases)
-│   └── oscillator_test.cpp
+│   ├── oscillator.cpp
+│   ├── state_variable_filter.cpp
+│   └── delayline.cpp
+├── tests/                       # Unit tests (GoogleTest, 50+ cases)
+│   ├── oscillator_test.cpp
+│   └── new_modules_test.cpp
 ├── examples/                    # Example programs
 │   ├── images/
 │   │   └── sonic-forge-dsp.png  # Project banner image
@@ -325,7 +454,7 @@ Static analysis is configured in `.clang-tidy` with `HeaderFilterRegex: '.*sonic
 
 ```bash
 cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DSONICFORGE_BUILD_TESTS=ON
-clang-tidy --warnings-as-errors='*' -p build src/oscillator.cpp tests/oscillator_test.cpp
+clang-tidy --warnings-as-errors='*' -p build src/oscillator.cpp src/state_variable_filter.cpp src/delayline.cpp tests/oscillator_test.cpp tests/new_modules_test.cpp
 ```
 
 ---
@@ -394,9 +523,9 @@ Three jobs run automatically on every push and pull request to `main`/`master` v
 
 | Job | Runner | What it checks |
 |-----|--------|----------------|
-| `build-and-test` | Linux (GCC 13, Clang 18), macOS 14, Windows 2022 | Compiles library + examples + tests; runs `ctest` in Debug and Release |
+| `build-and-test` | Linux (GCC 13, Clang 18), macOS 14, Windows 2022 | Compiles library + examples + tests (50+ cases); runs `ctest` in Debug and Release |
 | `clang-format` | Ubuntu 24.04 + clang-format-18 | All `*.cpp` / `*.hpp` files must be format-clean |
-| `clang-tidy` | Ubuntu 24.04 + clang-tidy-18 | `src/oscillator.cpp` and `tests/oscillator_test.cpp` with `--warnings-as-errors='*'` |
+| `clang-tidy` | Ubuntu 24.04 + clang-tidy-18 | All `src/` and `tests/` source files with `--warnings-as-errors='*'` |
 
 ### CPM Package Caching
 

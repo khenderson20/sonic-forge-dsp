@@ -17,10 +17,15 @@
  * get_viz_buffer() without any JS-side allocation or copy.
  */
 
+#include <sonicforge/delayline.hpp>
 #include <sonicforge/oscillator.hpp>
+#include <sonicforge/smoothed_value.hpp>
+#include <sonicforge/state_variable_filter.hpp>
+#include <sonicforge/waveshaper.hpp>
 
 #include <emscripten/emscripten.h>
 
+#include <algorithm>
 #include <cmath>
 
 /// Fixed-size audio output buffer (128 = AudioWorklet render quantum).
@@ -76,6 +81,41 @@ static constexpr int VIZ_MAX_SAMPLES = VIZ_MAX_SLICES * VIZ_MAX_PTS;  // 8 192
 /// Dedicated visualisation output buffer.  Written by viz_render_wavetable()
 /// and read back by JS via a Float32Array view returned by get_viz_buffer().
 static float g_viz_buffer[VIZ_MAX_SAMPLES];
+
+// =============================================================================
+// FX chain — StateVariableFilter, WaveshaperProcessor, DelayLine
+// =============================================================================
+
+/// Max delay buffer: 1 second at 48 kHz (scales with actual sample rate up
+/// to this cap — longer delay times are silently clamped by set_delay()).
+static constexpr std::size_t DELAY_MAX_SAMPLES = 48000;
+
+// Static instances — constructed once at Wasm startup via _initialize().
+static sonicforge::StateVariableFilter g_filter;
+static sonicforge::WaveshaperProcessor g_waveshaper;
+static sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> g_delay{DELAY_MAX_SAMPLES};
+
+// SmoothedValue for frequency glide (multiplicative ramp = perceptually linear).
+static sonicforge::SmoothedValue<sonicforge::SmoothingMode::Multiplicative> g_freq_smooth;
+
+// Per-module enable flags (all off by default).
+static bool g_filter_enabled    = false;
+static bool g_waveshaper_enabled = false;
+static bool g_delay_enabled     = false;
+static bool g_glide_enabled     = false;
+
+// Delay state: time (ms), feedback, and cross-quantum wet tracker.
+static float g_delay_time_ms  = 250.0F;
+static float g_delay_feedback = 0.30F;
+static float g_delay_prev_wet = 0.0F;
+
+/// Recompute delay in samples from the current time and sample-rate.
+static void s_update_delay_samples() noexcept {
+    const float sr = (g_sr > 0.0F) ? g_sr : 48000.0F;
+    const float samples = g_delay_time_ms / 1000.0F * sr;
+    const float max_s = static_cast<float>(DELAY_MAX_SAMPLES - 1);
+    g_delay.set_delay(std::min(samples, max_s));
+}
 
 extern "C" {
 
@@ -256,6 +296,16 @@ int audio_init(int waveform, float frequency, float sample_rate) {
         g_oscillators[h] = new sonicforge::Oscillator(g_wf, harm_freq, sample_rate);
     }
 
+    // ── Initialise FX chain ──────────────────────────────────────────────────
+    g_filter.set_sample_rate(sample_rate);
+    g_filter.reset();
+
+    g_delay.reset();
+    g_delay_prev_wet = 0.0F;
+    s_update_delay_samples();
+
+    g_freq_smooth.reset(frequency, sample_rate);
+
     return 0;
 }
 
@@ -307,6 +357,22 @@ EMSCRIPTEN_KEEPALIVE
 void audio_process(int num_samples) {
     const auto n = static_cast<std::size_t>(num_samples);
 
+    // ── Frequency glide (SmoothedValue) ─────────────────────────────────────
+    // Advance the multiplicative smoother through all samples in this quantum
+    // and apply the final interpolated frequency to the oscillator pool.
+    if (g_glide_enabled && g_freq_smooth.is_smoothing()) {
+        float smoothed = g_base_freq;
+        for (int i = 0; i < num_samples; ++i) {
+            smoothed = g_freq_smooth.process();
+        }
+        for (int h = 0; h < MAX_HARMONICS; ++h) {
+            if (g_oscillators[h] != nullptr) {
+                g_oscillators[h]->set_frequency(smoothed * static_cast<float>(h + 1));
+            }
+        }
+    }
+
+    // ── Oscillator synthesis ─────────────────────────────────────────────────
     // Zero accumulator
     for (int i = 0; i < num_samples; ++i) {
         g_buffer[i] = 0.0F;
@@ -327,6 +393,29 @@ void audio_process(int num_samples) {
     for (int i = 0; i < num_samples; ++i) {
         g_buffer[i] *= g_norm;
     }
+
+    // ── FX chain ─────────────────────────────────────────────────────────────
+
+    // 1. State variable filter
+    if (g_filter_enabled) {
+        g_filter.process_block(g_buffer, n);
+    }
+
+    // 2. Waveshaper
+    if (g_waveshaper_enabled) {
+        g_waveshaper.process_block(g_buffer, n);
+    }
+
+    // 3. Delay (with external feedback loop — dry/wet mix 1:1)
+    if (g_delay_enabled) {
+        for (int i = 0; i < num_samples; ++i) {
+            const float dry = g_buffer[i];
+            // Write (dry + feedback × previous wet) → read back the delayed sample.
+            const float wet = g_delay.process(dry + g_delay_feedback * g_delay_prev_wet);
+            g_delay_prev_wet = wet;
+            g_buffer[i] = dry + wet;
+        }
+    }
 }
 
 /**
@@ -340,9 +429,17 @@ void audio_set_frequency(float frequency) {
     if (!std::isfinite(frequency) || frequency <= 0.0F)
         return;
     g_base_freq = frequency;
-    for (int h = 0; h < MAX_HARMONICS; ++h) {
-        if (g_oscillators[h] != nullptr) {
-            g_oscillators[h]->set_frequency(frequency * static_cast<float>(h + 1));
+
+    if (g_glide_enabled) {
+        // Ramp toward the new target; the smoother feeds audio_process() per quantum.
+        g_freq_smooth.set_target(frequency);
+    } else {
+        // Instant update — also reset the smoother so glide doesn't carry stale state.
+        g_freq_smooth.reset(frequency, g_sr);
+        for (int h = 0; h < MAX_HARMONICS; ++h) {
+            if (g_oscillators[h] != nullptr) {
+                g_oscillators[h]->set_frequency(frequency * static_cast<float>(h + 1));
+            }
         }
     }
 }
@@ -380,6 +477,109 @@ void audio_destroy() {
     }
     g_harmonics = 1;
     g_norm = 1.0F;
+    g_filter.reset();
+    g_delay.reset();
+    g_delay_prev_wet = 0.0F;
+}
+
+// =============================================================================
+// FX chain exports — StateVariableFilter
+// =============================================================================
+
+/** Enable or disable the state variable filter in the audio chain. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_filter_enabled(int on) {
+    g_filter_enabled = (on != 0);
+    if (!g_filter_enabled) g_filter.reset();
+}
+
+/** Set the filter mode: 0=Lowpass 1=Highpass 2=Bandpass 3=Notch. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_filter_mode(int mode) {
+    if (mode < 0 || mode > 3) return;
+    g_filter.set_mode(static_cast<sonicforge::FilterMode>(mode));
+}
+
+/** Set the filter cutoff frequency in Hz. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_filter_cutoff(float hz) {
+    g_filter.set_cutoff_hz(hz);
+}
+
+/** Set the filter resonance [0.0, 1.0]. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_filter_resonance(float q) {
+    g_filter.set_resonance(q);
+}
+
+// =============================================================================
+// FX chain exports — WaveshaperProcessor
+// =============================================================================
+
+/** Enable or disable the waveshaper in the audio chain. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_waveshaper_enabled(int on) {
+    g_waveshaper_enabled = (on != 0);
+}
+
+/** Set the waveshaper shape: 0=Tanh 1=Poly 2=HardClip 3=WaveFold. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_waveshaper_shape(int shape) {
+    if (shape < 0 || shape > 3) return;
+    g_waveshaper.set_shape(static_cast<sonicforge::WaveshaperShape>(shape));
+}
+
+/** Set the waveshaper pre-gain (drive). Must be >= 0. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_waveshaper_drive(float drive) {
+    g_waveshaper.set_drive(drive);
+}
+
+// =============================================================================
+// FX chain exports — DelayLine
+// =============================================================================
+
+/** Enable or disable the delay line.  Disabling resets the buffer. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_delay_enabled(int on) {
+    g_delay_enabled = (on != 0);
+    if (!g_delay_enabled) {
+        g_delay.reset();
+        g_delay_prev_wet = 0.0F;
+    }
+}
+
+/** Set the delay time in milliseconds. Clamped to [0, DELAY_MAX_SAMPLES/sr * 1000]. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_delay_time_ms(float ms) {
+    if (ms < 0.0F) ms = 0.0F;
+    g_delay_time_ms = ms;
+    s_update_delay_samples();
+}
+
+/** Set the delay feedback amount [0.0, 0.95]. */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_delay_feedback(float fb) {
+    g_delay_feedback = std::max(0.0F, std::min(fb, 0.95F));
+}
+
+// =============================================================================
+// FX chain exports — SmoothedValue (frequency glide)
+// =============================================================================
+
+/**
+ * Set the frequency glide time in milliseconds.
+ * A value of 0 disables glide (instant frequency changes).
+ */
+EMSCRIPTEN_KEEPALIVE
+void audio_set_glide_ms(float ms) {
+    if (ms <= 0.0F) {
+        g_glide_enabled = false;
+        g_freq_smooth.snap_to_target();
+    } else {
+        g_glide_enabled = true;
+        g_freq_smooth.set_ramp_duration(ms / 1000.0F);
+    }
 }
 
 }  // extern "C"

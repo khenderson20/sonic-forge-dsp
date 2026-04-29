@@ -130,6 +130,39 @@ class SonicForgeProcessor extends AudioWorkletProcessor {
       if (this.instance.audio_destroy) {
         this.instance.audio_destroy();
       }
+    } else if (type === 'fx-filter') {
+      // StateVariableFilter parameter bundle
+      // Accepts any combination of: { enabled, mode, cutoff, resonance }
+      if (data.enabled !== undefined && this.instance.audio_set_filter_enabled)
+        this.instance.audio_set_filter_enabled(data.enabled ? 1 : 0);
+      if (data.mode !== undefined && this.instance.audio_set_filter_mode)
+        this.instance.audio_set_filter_mode(data.mode);
+      if (data.cutoff !== undefined && this.instance.audio_set_filter_cutoff)
+        this.instance.audio_set_filter_cutoff(data.cutoff);
+      if (data.resonance !== undefined && this.instance.audio_set_filter_resonance)
+        this.instance.audio_set_filter_resonance(data.resonance);
+    } else if (type === 'fx-shaper') {
+      // WaveshaperProcessor parameter bundle
+      // Accepts any combination of: { enabled, shape, drive }
+      if (data.enabled !== undefined && this.instance.audio_set_waveshaper_enabled)
+        this.instance.audio_set_waveshaper_enabled(data.enabled ? 1 : 0);
+      if (data.shape !== undefined && this.instance.audio_set_waveshaper_shape)
+        this.instance.audio_set_waveshaper_shape(data.shape);
+      if (data.drive !== undefined && this.instance.audio_set_waveshaper_drive)
+        this.instance.audio_set_waveshaper_drive(data.drive);
+    } else if (type === 'fx-delay') {
+      // DelayLine parameter bundle
+      // Accepts any combination of: { enabled, time_ms, feedback }
+      if (data.enabled !== undefined && this.instance.audio_set_delay_enabled)
+        this.instance.audio_set_delay_enabled(data.enabled ? 1 : 0);
+      if (data.time_ms !== undefined && this.instance.audio_set_delay_time_ms)
+        this.instance.audio_set_delay_time_ms(data.time_ms);
+      if (data.feedback !== undefined && this.instance.audio_set_delay_feedback)
+        this.instance.audio_set_delay_feedback(data.feedback);
+    } else if (type === 'fx-glide') {
+      // SmoothedValue glide time in milliseconds (0 = instant / off)
+      if (data.ms !== undefined && this.instance.audio_set_glide_ms)
+        this.instance.audio_set_glide_ms(data.ms);
     } else if (type === 'init-sab') {
       // Accept a SharedArrayBuffer ring from the main thread.
       // Layout: [Int32 write-cursor (4 bytes)] [Float32 ring samples (rest)]

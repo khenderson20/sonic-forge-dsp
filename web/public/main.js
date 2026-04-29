@@ -24,27 +24,34 @@ const CAM_TARGET = Object.freeze({ x:   0, y:  5, z: -44 });
 
 /* ═══════════════════════════════════════════════════════════════════
    Colour palette
-   All hues are defined once so every helper uses the same constants.
-   Number literals → THREE materials.  String literals → canvas/CSS.
    ═══════════════════════════════════════════════════════════════════ */
+const COL_AXIS_X  = 0xe8975a;  const HEX_AXIS_X = '#e8975a';
+const COL_AXIS_Y  = 0x4cd9c8;  const HEX_AXIS_Y = '#4cd9c8';
+const COL_AXIS_Z  = 0x8b7ef8;  const HEX_AXIS_Z = '#8b7ef8';
 
-// Axis accent hues (Three.js integer colours + matching CSS strings)
-const COL_AXIS_X  = 0xe8975a;  const HEX_AXIS_X = '#e8975a';  // warm amber   — Phase
-const COL_AXIS_Y  = 0x4cd9c8;  const HEX_AXIS_Y = '#4cd9c8';  // electric cyan — Amplitude
-const COL_AXIS_Z  = 0x8b7ef8;  const HEX_AXIS_Z = '#8b7ef8';  // soft violet  — Depth
+const RIB_FRONT = [0.239, 0.910, 0.812];
+const RIB_BACK  = [0.333, 0.133, 0.667];
 
-// Ribbon gradient  front (teal) → back (indigo), both as [R,G,B] ∈ [0,1]
-const RIB_FRONT = [0.239, 0.910, 0.812];   // #3de8cf  teal
-const RIB_BACK  = [0.333, 0.133, 0.667];   // #5522aa  indigo
+const COL_ZERO_REF   = 0x1c2a42;
+const COL_AMP_BOUNDS = 0x141a2a;
+const COL_PHASE_MID  = 0x151825;
+const COL_GRID_MAIN  = 0x131320;
+const COL_GRID_CTR   = 0x1c1c30;
+const COL_DECAY_LINE = 0xf0625a;
+const COL_PEAK_DOT   = 0xffffff;
 
-// Reference / guide geometry colours
-const COL_ZERO_REF   = 0x1c2a42;  // zero-crossing edge line
-const COL_AMP_BOUNDS = 0x141a2a;  // ±1 amplitude boundary lines
-const COL_PHASE_MID  = 0x151825;  // π phase guide line
-const COL_GRID_MAIN  = 0x131320;  // ground grid cells
-const COL_GRID_CTR   = 0x1c1c30;  // ground grid centre lines
-const COL_DECAY_LINE = 0xf0625a;  // decay envelope curve
-const COL_PEAK_DOT   = 0xffffff;  // peak-callout dot
+/* ═══════════════════════════════════════════════════════════════════
+   Cutoff frequency ↔ slider mapping (logarithmic, 20 Hz – 20 kHz)
+   ═══════════════════════════════════════════════════════════════════ */
+const _LOG_MIN = Math.log10(20);
+const _LOG_MAX = Math.log10(20000);
+
+function sliderToCutoffHz(v) {
+    return Math.pow(10, _LOG_MIN + (v / 1000) * (_LOG_MAX - _LOG_MIN));
+}
+function formatCutoffHz(hz) {
+    return hz >= 1000 ? `${(hz / 1000).toFixed(1)} kHz` : `${Math.round(hz)} Hz`;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    SharedArrayBuffer ring
@@ -155,6 +162,74 @@ function applyRibbonColor(col, v, t, amp) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   JS State Variable Filter
+   Mirrors the Cytomic ZDF formulation used in the C++ StateVariableFilter.
+   Applied per-slice to the 3D visualisation so the ribbon reflects the
+   effect of the filter on the waveform shape without requiring a Wasm rebuild.
+   ═══════════════════════════════════════════════════════════════════ */
+class VizSVF {
+    constructor() { this.ic1 = 0; this.ic2 = 0; this.g = 0; this.R = 0; this.H = 0; }
+
+    /**
+     * @param {number} fc   Cutoff frequency in Hz
+     * @param {number} res  Resonance [0, 1] — same mapping as the C++ SVF
+     * @param {number} fs   Sample rate (pass n_pts for visualisation)
+     */
+    prepare(fc, res, fs) {
+        fc  = Math.max(20, Math.min(fc, fs * 0.499));
+        res = Math.max(0, Math.min(res, 0.99));
+        this.g = Math.tan(Math.PI * fc / fs);
+        this.R = 2 * (1 - res);
+        this.H = 1 / (1 + this.R * this.g + this.g * this.g);
+        this.ic1 = 0;
+        this.ic2 = 0;
+    }
+
+    /** @param {number} mode  0=LP 1=HP 2=BP 3=Notch */
+    process(x, mode) {
+        const v3 = x - this.ic2;
+        const v1 = this.H * (this.ic1 + this.g * v3);
+        const v2 = this.ic2 + this.g * v1;
+        this.ic1 = 2 * v1 - this.ic1;
+        this.ic2 = 2 * v2 - this.ic2;
+        switch (mode) {
+            case 0: return v2;
+            case 1: return x - this.R * v1 - v2;
+            case 2: return v1;
+            case 3: return x - this.R * v1;
+        }
+        return v2;
+    }
+
+    reset() { this.ic1 = this.ic2 = 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   JS Waveshaper transfer functions
+   Mirrors sonicforge/waveshaper.hpp — used for the 3D visualisation preview.
+   ═══════════════════════════════════════════════════════════════════ */
+function vizApplyWaveshaper(x, shape, drive) {
+    const y = x * drive;
+    switch (shape) {
+        case 0: return Math.tanh(y);
+        case 1: {
+            const ay = Math.abs(y);
+            if (ay < 1 / 3) return y;
+            if (ay >= 2 / 3) return y > 0 ? 1 : -1;
+            return y * (1.5 - 0.5 * y * y);
+        }
+        case 2: return Math.max(-1, Math.min(1, y));
+        case 3: {
+            let f = y;
+            if (f > 1) { f = 2 - f; if (f < -1) f = -2 - f; }
+            else if (f < -1) { f = -2 - f; if (f > 1) f = 2 - f; }
+            return f;
+        }
+    }
+    return x;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    SonicForgeApp
    ═══════════════════════════════════════════════════════════════════ */
 class SonicForgeApp {
@@ -166,9 +241,28 @@ class SonicForgeApp {
     this.started   = false;
     this.muted     = false;
     this.freq      = 440;
-    this.wave      = 0;    // 0=sine 1=saw 2=square 3=tri
-    this.decay     = 0;    // 0–100 %
+    this.wave      = 0;
+    this.decay     = 0;
     this.harmonics = 1;
+
+    // ── FX chain state ─────────────────────────────────────────────────────
+    this.glideMs         = 0;       // SmoothedValue: glide time in ms (0 = off)
+
+    this.filterEnabled   = false;
+    this.filterMode      = 0;       // 0=LP 1=HP 2=BP 3=Notch
+    this.filterCutoff    = 1000;    // Hz
+    this.filterResonance = 0.50;    // [0, 1]
+
+    this.shaperEnabled   = false;
+    this.shaperShape     = 0;       // 0=Tanh 1=Poly 2=Hard 3=Fold
+    this.shaperDrive     = 1.0;     // multiplier
+
+    this.delayEnabled    = false;
+    this.delayTimeMs     = 250;     // ms
+    this.delayFeedback   = 0.30;    // [0, 0.95]
+
+    // JS SVF used to preview filter effect in the 3D visualisation.
+    this._vizSVF = new VizSVF();
 
     // ── Wavetable geometry ─────────────────────────────────────────────────
     this.SLICES = 32;
@@ -651,11 +745,28 @@ class SonicForgeApp {
         const base = s * p;
         const t    = s / n;
 
+        // Prepare the JS SVF for this slice (reset state between slices so
+        // each one is processed independently, matching the viz buffer layout).
+        if (this.filterEnabled) {
+            this._vizSVF.prepare(this.filterCutoff, this.filterResonance, p);
+            this._vizSVF.reset();
+        }
+
         for (let i = 0; i < p; i++) {
             const v   = base + i;
-            const amp = this.vizBufView[v];
-            const x   = (i / p - 0.5) * X_AXIS_WIDTH;
+            let   amp = this.vizBufView[v];
 
+            // Apply JS filter approximation to the visualisation
+            if (this.filterEnabled) {
+                amp = this._vizSVF.process(amp, this.filterMode);
+            }
+
+            // Apply JS waveshaper approximation to the visualisation
+            if (this.shaperEnabled) {
+                amp = vizApplyWaveshaper(amp, this.shaperShape, this.shaperDrive);
+            }
+
+            const x = (i / p - 0.5) * X_AXIS_WIDTH;
             pos[v * 3]     = x;
             pos[v * 3 + 1] = amp * AMP_SCALE;
             pos[v * 3 + 2] = zOff;
@@ -687,6 +798,11 @@ class SonicForgeApp {
         const decayFactor = 1.0 - (s / n) * decayAmt;
         const zOff        = -s * Z_SLICE_SPACING;
 
+        if (this.filterEnabled) {
+            this._vizSVF.prepare(this.filterCutoff, this.filterResonance, p);
+            this._vizSVF.reset();
+        }
+
         for (let i = 0; i < p; i++) {
             const phase = (i / p) * 2 * Math.PI;
             let amp = this._waveSampleJS(phase);
@@ -694,6 +810,13 @@ class SonicForgeApp {
                 amp += this._waveSampleJS(phase * h) / h;
             }
             amp *= decayFactor;
+
+            if (this.filterEnabled) {
+                amp = this._vizSVF.process(amp, this.filterMode);
+            }
+            if (this.shaperEnabled) {
+                amp = vizApplyWaveshaper(amp, this.shaperShape, this.shaperDrive);
+            }
 
             const v = s * p + i;
             const x = (i / p - 0.5) * X_AXIS_WIDTH;
@@ -866,6 +989,29 @@ class SonicForgeApp {
             harmonics:  this.harmonics,
           });
 
+          // Sync current FX state to the freshly initialised worklet.
+          if (this.glideMs > 0)
+              this.worklet.port.postMessage({ type: 'fx-glide', ms: this.glideMs });
+          this.worklet.port.postMessage({
+              type: 'fx-filter',
+              enabled:   this.filterEnabled,
+              mode:      this.filterMode,
+              cutoff:    this.filterCutoff,
+              resonance: this.filterResonance,
+          });
+          this.worklet.port.postMessage({
+              type: 'fx-shaper',
+              enabled: this.shaperEnabled,
+              shape:   this.shaperShape,
+              drive:   this.shaperDrive,
+          });
+          this.worklet.port.postMessage({
+              type: 'fx-delay',
+              enabled:  this.delayEnabled,
+              time_ms:  this.delayTimeMs,
+              feedback: this.delayFeedback,
+          });
+
           if (this.sabAvailable) {
               this.worklet.port.postMessage({ type: 'init-sab', ringBuffer: this.ringBuffer });
               const lb = $('live-btn');
@@ -1013,6 +1159,162 @@ class SonicForgeApp {
         this._resetCamera();
       }
     });
+
+    // ── FX Chain wiring ───────────────────────────────────────────────────
+
+    // Glide (SmoothedValue)
+    $('glide-slider').addEventListener('input', (e) => {
+        const ms = Number(e.target.value);
+        this.glideMs = ms;
+        $('glide-val').textContent = `${ms} ms`;
+        if (this.worklet) this.worklet.port.postMessage({ type: 'fx-glide', ms });
+    });
+
+    // Filter — LED/header click toggles enable
+    $('filter-header').addEventListener('click', () => {
+        this._toggleFXSection('filter-section', 'filter-led', (on) => {
+            this.filterEnabled = on;
+            this._updateReadoutFX();
+            if (this.worklet) this.worklet.port.postMessage({ type: 'fx-filter', enabled: on });
+            this._rebuildWaveData();
+        });
+    });
+
+    document.querySelectorAll('[data-filter-mode]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const mode = Number(btn.dataset.filterMode);
+            this.filterMode = mode;
+            btn.closest('.fx-mode-btns').querySelectorAll('.wbtn')
+               .forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            this._updateReadoutFX();
+            if (this.worklet) this.worklet.port.postMessage({ type: 'fx-filter', mode });
+            this._rebuildWaveData();
+        });
+    });
+
+    $('filter-cutoff').addEventListener('input', (e) => {
+        const hz = sliderToCutoffHz(Number(e.target.value));
+        this.filterCutoff = hz;
+        $('filter-cutoff-val').textContent = formatCutoffHz(hz);
+        this._updateReadoutFX();
+        if (this.worklet) this.worklet.port.postMessage({ type: 'fx-filter', cutoff: hz });
+        this._rebuildWaveData();
+    });
+
+    $('filter-res').addEventListener('input', (e) => {
+        const res = Number(e.target.value) / 100;
+        this.filterResonance = res;
+        $('filter-res-val').textContent = res.toFixed(2);
+        if (this.worklet) this.worklet.port.postMessage({ type: 'fx-filter', resonance: res });
+        this._rebuildWaveData();
+    });
+
+    // Waveshaper — LED/header click toggles enable
+    $('shaper-header').addEventListener('click', () => {
+        this._toggleFXSection('shaper-section', 'shaper-led', (on) => {
+            this.shaperEnabled = on;
+            this._updateReadoutFX();
+            if (this.worklet) this.worklet.port.postMessage({ type: 'fx-shaper', enabled: on });
+            this._rebuildWaveData();
+        });
+    });
+
+    document.querySelectorAll('[data-shaper-shape]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const shape = Number(btn.dataset.shaperShape);
+            this.shaperShape = shape;
+            btn.closest('.fx-mode-btns').querySelectorAll('.wbtn')
+               .forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            this._updateReadoutFX();
+            if (this.worklet) this.worklet.port.postMessage({ type: 'fx-shaper', shape });
+            this._rebuildWaveData();
+        });
+    });
+
+    $('shaper-drive').addEventListener('input', (e) => {
+        const drive = Number(e.target.value) / 10;
+        this.shaperDrive = drive;
+        $('shaper-drive-val').textContent = `${drive.toFixed(1)}×`;
+        this._updateReadoutFX();
+        if (this.worklet) this.worklet.port.postMessage({ type: 'fx-shaper', drive });
+        this._rebuildWaveData();
+    });
+
+    // Delay — LED/header click toggles enable
+    $('delay-header').addEventListener('click', () => {
+        this._toggleFXSection('delay-section', 'delay-led', (on) => {
+            this.delayEnabled = on;
+            this._updateReadoutFX();
+            if (this.worklet) this.worklet.port.postMessage({ type: 'fx-delay', enabled: on });
+        });
+    });
+
+    $('delay-time').addEventListener('input', (e) => {
+        const ms = Number(e.target.value);
+        this.delayTimeMs = ms;
+        $('delay-time-val').textContent = `${ms} ms`;
+        this._updateReadoutFX();
+        if (this.worklet) this.worklet.port.postMessage({ type: 'fx-delay', time_ms: ms });
+    });
+
+    $('delay-fb').addEventListener('input', (e) => {
+        const fb = Number(e.target.value) / 100;
+        this.delayFeedback = fb;
+        $('delay-fb-val').textContent = `${e.target.value}%`;
+        if (this.worklet) this.worklet.port.postMessage({ type: 'fx-delay', feedback: fb });
+    });
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     FX helpers
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /**
+   * Toggle a FX section on/off.
+   * @param {string}   sectionId  Element id of the .fx-section div
+   * @param {string}   ledId      Element id of the .fx-led dot
+   * @param {function} cb         Called with (boolean on) after state change
+   */
+  _toggleFXSection(sectionId, ledId, cb) {
+    const section = $(sectionId);
+    const led     = $(ledId);
+    const on      = !section.classList.contains('enabled');
+    section.classList.toggle('enabled', on);
+    led.classList.toggle('active', on);
+    cb(on);
+  }
+
+  /** Update the top-left readout rows for filter, shaper, and delay. */
+  _updateReadoutFX() {
+    const rFilter = $('r-filter');
+    const rShaper = $('r-shaper');
+    const rDelay  = $('r-delay');
+
+    if (rFilter) {
+        if (!this.filterEnabled) {
+            rFilter.textContent = 'off';
+        } else {
+            const modeNames = ['LP', 'HP', 'BP', 'Notch'];
+            rFilter.textContent = `${modeNames[this.filterMode]} ${formatCutoffHz(this.filterCutoff)}`;
+        }
+    }
+
+    if (rShaper) {
+        if (!this.shaperEnabled) {
+            rShaper.textContent = 'off';
+        } else {
+            const shapeNames = ['Tanh', 'Poly', 'Hard', 'Fold'];
+            rShaper.textContent = `${shapeNames[this.shaperShape]} ${this.shaperDrive.toFixed(1)}×`;
+        }
+    }
+
+    if (rDelay) {
+        rDelay.textContent = this.delayEnabled
+            ? `${this.delayTimeMs} ms / ${Math.round(this.delayFeedback * 100)}%`
+            : 'off';
+    }
   }
 
   /* ─────────────────────────────────────────────────────────────────────────

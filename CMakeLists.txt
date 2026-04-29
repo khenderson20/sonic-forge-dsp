@@ -83,6 +83,8 @@ option(SONICFORGE_OPTIMIZE_FOR_HOST
 # =============================================================================
 add_library(sonicforge
     src/oscillator.cpp
+    src/state_variable_filter.cpp
+    src/delayline.cpp
 )
 
 # Public include directory
@@ -144,7 +146,10 @@ if(SONICFORGE_BUILD_TESTS)
 
     enable_testing()
 
-    add_executable(oscillator_test tests/oscillator_test.cpp)
+    add_executable(oscillator_test
+        tests/oscillator_test.cpp
+        tests/new_modules_test.cpp
+    )
     target_link_libraries(oscillator_test PRIVATE sonicforge GTest::gtest_main)
 
     # gtest_discover_tests runs the binary at build time to enumerate tests,
