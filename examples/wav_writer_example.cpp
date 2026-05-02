@@ -56,26 +56,26 @@
  * Learning note: The WAV format uses little-endian byte order
  * (least significant byte first) on most systems.
  */
-#pragma pack(push, 1)  // Ensure no padding between struct members
+#pragma pack(push, 1) // Ensure no padding between struct members
 struct WavHeader {
     // RIFF chunk descriptor
-    char riff_id[4] = {'R', 'I', 'F', 'F'};  // "RIFF" identifier
-    uint32_t file_size = 0;                  // File size - 8 bytes
-    char wave_id[4] = {'W', 'A', 'V', 'E'};  // "WAVE" format
+    char riff_id[4] = {'R', 'I', 'F', 'F'}; // "RIFF" identifier
+    uint32_t file_size = 0;                 // File size - 8 bytes
+    char wave_id[4] = {'W', 'A', 'V', 'E'}; // "WAVE" format
 
     // fmt sub-chunk (format specification)
-    char fmt_id[4] = {'f', 'm', 't', ' '};  // "fmt " identifier
-    uint32_t fmt_size = 16;                 // Size of fmt chunk (16 for PCM)
-    uint16_t audio_format = 1;              // Audio format (1 = PCM)
-    uint16_t num_channels = 1;              // Number of channels (1 = mono)
-    uint32_t sample_rate = 48000;           // Samples per second
-    uint32_t byte_rate = 0;                 // Bytes per second
-    uint16_t block_align = 0;               // Bytes per sample frame
-    uint16_t bits_per_sample = 16;          // Bits per sample (16-bit)
+    char fmt_id[4] = {'f', 'm', 't', ' '}; // "fmt " identifier
+    uint32_t fmt_size = 16;                // Size of fmt chunk (16 for PCM)
+    uint16_t audio_format = 1;             // Audio format (1 = PCM)
+    uint16_t num_channels = 1;             // Number of channels (1 = mono)
+    uint32_t sample_rate = 48000;          // Samples per second
+    uint32_t byte_rate = 0;                // Bytes per second
+    uint16_t block_align = 0;              // Bytes per sample frame
+    uint16_t bits_per_sample = 16;         // Bits per sample (16-bit)
 
     // data sub-chunk
-    char data_id[4] = {'d', 'a', 't', 'a'};  // "data" identifier
-    uint32_t data_size = 0;                  // Size of audio data in bytes
+    char data_id[4] = {'d', 'a', 't', 'a'}; // "data" identifier
+    uint32_t data_size = 0;                 // Size of audio data in bytes
 };
 #pragma pack(pop)
 
@@ -87,8 +87,7 @@ struct WavHeader {
  * @param sample_rate Sample rate in Hz
  * @return true if successful, false otherwise
  */
-bool write_wav_file(const std::string& filename, const std::vector<float>& samples,
-                    uint32_t sample_rate) {
+bool write_wav_file(const std::string& filename, const std::vector<float>& samples, uint32_t sample_rate) {
 
     std::ofstream file(filename, std::ios::binary);
     if (!file.is_open()) {
@@ -98,8 +97,8 @@ bool write_wav_file(const std::string& filename, const std::vector<float>& sampl
 
     // Calculate header values
     const uint32_t num_samples = static_cast<uint32_t>(samples.size());
-    const uint16_t num_channels = 1;      // Mono
-    const uint16_t bits_per_sample = 16;  // 16-bit audio
+    const uint16_t num_channels = 1;     // Mono
+    const uint16_t bits_per_sample = 16; // 16-bit audio
     const uint16_t bytes_per_sample = bits_per_sample / 8;
 
     WavHeader header;
@@ -109,7 +108,7 @@ bool write_wav_file(const std::string& filename, const std::vector<float>& sampl
     header.block_align = num_channels * bytes_per_sample;
     header.byte_rate = sample_rate * header.block_align;
     header.data_size = num_samples * bytes_per_sample;
-    header.file_size = 36 + header.data_size;  // Total file size - 8
+    header.file_size = 36 + header.data_size; // Total file size - 8
 
     // Write header
     file.write(reinterpret_cast<const char*>(&header), sizeof(WavHeader));
@@ -164,8 +163,7 @@ int main(int argc, char* argv[]) {
     // ==========================================================================
 
     constexpr uint32_t SAMPLE_RATE = 48000;
-    const std::size_t total_samples =
-        static_cast<std::size_t>(static_cast<float>(SAMPLE_RATE) * duration);
+    const std::size_t total_samples = static_cast<std::size_t>(static_cast<float>(SAMPLE_RATE) * duration);
 
     std::cout << "SonicForge DSP - WAV File Writer\n";
     std::cout << "================================\n";
@@ -183,8 +181,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Generating sine wave...\n";
 
     // Create oscillator
-    sonicforge::Oscillator oscillator(sonicforge::Waveform::SINE, frequency,
-                                      static_cast<float>(SAMPLE_RATE));
+    sonicforge::Oscillator oscillator(sonicforge::Waveform::SINE, frequency, static_cast<float>(SAMPLE_RATE));
 
     // Pre-allocate buffer for all samples
     // Learning note: Pre-allocation is important for performance.
@@ -206,7 +203,7 @@ int main(int argc, char* argv[]) {
     // Learning note: Abrupt starts and stops create clicks (discontinuities).
     // A fade-in/fade-out envelope smooths these transitions.
 
-    const std::size_t fade_samples = static_cast<std::size_t>(0.01F * SAMPLE_RATE);  // 10ms fade
+    const std::size_t fade_samples = static_cast<std::size_t>(0.01F * SAMPLE_RATE); // 10ms fade
 
     // Fade in
     for (std::size_t i = 0; i < fade_samples && i < samples.size(); ++i) {

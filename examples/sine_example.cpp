@@ -54,8 +54,8 @@ int main(int argc, char* argv[]) {
     // ==========================================================================
 
     // Parse command line arguments (optional)
-    float frequency = 440.0F;  // Hz - A4 (concert pitch)
-    float duration = 3.0F;     // seconds
+    float frequency = 440.0F; // Hz - A4 (concert pitch)
+    float duration = 3.0F;    // seconds
 
     if (argc >= 2) {
         frequency = std::stof(argv[1]);
@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Audio settings
-    constexpr float SAMPLE_RATE = 48000.0F;  // 48 kHz - standard professional rate
+    constexpr float SAMPLE_RATE = 48000.0F; // 48 kHz - standard professional rate
 
     // Calculate total samples to generate
     const std::size_t total_samples = static_cast<std::size_t>(SAMPLE_RATE * duration);
@@ -78,9 +78,9 @@ int main(int argc, char* argv[]) {
     //
     // Learning note: The oscillator maintains internal state (phase).
     // Each call to process() advances this phase and returns the next sample.
-    sonicforge::Oscillator oscillator(sonicforge::Waveform::SINE,  // Waveform type
-                                      frequency,                   // Frequency in Hz
-                                      SAMPLE_RATE                  // Sample rate in Hz
+    sonicforge::Oscillator oscillator(sonicforge::Waveform::SINE, // Waveform type
+                                      frequency,                  // Frequency in Hz
+                                      SAMPLE_RATE                 // Sample rate in Hz
     );
 
     // ==========================================================================
@@ -110,8 +110,7 @@ int main(int argc, char* argv[]) {
 
     while (samples_remaining > 0) {
         // Calculate how many samples to process this iteration
-        const std::size_t samples_this_block =
-            (samples_remaining > BLOCK_SIZE) ? BLOCK_SIZE : samples_remaining;
+        const std::size_t samples_this_block = (samples_remaining > BLOCK_SIZE) ? BLOCK_SIZE : samples_remaining;
 
         // Generate a block of samples
         // Using process_block() is more efficient than calling process() in a loop

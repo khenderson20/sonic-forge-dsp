@@ -78,8 +78,7 @@ public:
      * @brief Construct with an initial value
      * @param initial_value  Both the starting value and the initial target
      */
-    explicit SmoothedValue(float initial_value) noexcept
-        : current_(initial_value), target_(initial_value) {}
+    explicit SmoothedValue(float initial_value) noexcept : current_(initial_value), target_(initial_value) {}
 
     /**
      * @brief Reset the smoother to a known value and sample rate
@@ -175,8 +174,7 @@ template <> class SmoothedValue<SmoothingMode::Multiplicative> {
 public:
     SmoothedValue() noexcept = default;
 
-    explicit SmoothedValue(float initial_value) noexcept
-        : current_(initial_value), target_(initial_value) {}
+    explicit SmoothedValue(float initial_value) noexcept : current_(initial_value), target_(initial_value) {}
 
     void reset(float initial_value, float sample_rate) noexcept {
         current_ = initial_value;
@@ -260,6 +258,6 @@ private:
     bool is_smoothing_ = false;
 };
 
-}  // namespace sonicforge
+} // namespace sonicforge
 
-#endif  // SONICFORGE_SMOOTHED_VALUE_HPP
+#endif // SONICFORGE_SMOOTHED_VALUE_HPP

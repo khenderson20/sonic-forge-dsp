@@ -203,6 +203,6 @@ private:
     float feedback_{0.0F};
 };
 
-}  // namespace sonicforge
+} // namespace sonicforge
 
-#endif  // SONICFORGE_DELAYLINE_HPP
+#endif // SONICFORGE_DELAYLINE_HPP
