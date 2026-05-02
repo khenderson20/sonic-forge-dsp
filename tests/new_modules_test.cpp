@@ -39,7 +39,7 @@ TEST(SmoothedValueConstruction, MultiplicativeDefaults) {
 TEST(SmoothedValueLinear, RampsToTarget) {
     sonicforge::SmoothedValue<sonicforge::SmoothingMode::Linear> sv;
     sv.reset(0.0F, 48000.0F);
-    sv.set_ramp_duration(0.01F);  // 480 steps at 48 kHz
+    sv.set_ramp_duration(0.01F); // 480 steps at 48 kHz
 
     sv.set_target(1.0F);
     EXPECT_TRUE(sv.is_smoothing());
@@ -138,7 +138,7 @@ TEST(SVFConstruction, InvalidModeDefaultsToLowpass) {
 TEST(SVFProcessing, LowpassAttenuatesHighFrequency) {
     sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 500.0F, 0.1F, 48000.0F};
 
-    constexpr int N = 4800;  // 100 ms at 48 kHz
+    constexpr int N = 4800; // 100 ms at 48 kHz
     std::vector<float> buf(N);
 
     // Generate a 5 kHz sine — well above the 500 Hz cutoff
@@ -210,7 +210,7 @@ TEST(SVFParameters, ResonanceClamped) {
 
 TEST(SVFParameters, CutoffClampedToNyquist) {
     sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 1000.0F, 0.5F, 48000.0F};
-    svf.set_cutoff_hz(30000.0F);  // Above Nyquist (24 kHz)
+    svf.set_cutoff_hz(30000.0F); // Above Nyquist (24 kHz)
     EXPECT_LT(svf.get_cutoff_hz(), 24000.0F);
 }
 
@@ -220,8 +220,7 @@ TEST(SVFReset, StateClearsToZero) {
     // Process some non-zero signal
     float discard = 0.0F;
     for (size_t i = 0; i < 100; ++i) {
-        discard =
-            svf.process(std::sin(2.0F * 3.14159265F * 440.0F * static_cast<float>(i) / 48000.0F));
+        discard = svf.process(std::sin(2.0F * 3.14159265F * 440.0F * static_cast<float>(i) / 48000.0F));
     }
     (void)discard;
 
@@ -305,7 +304,7 @@ TEST(WaveshaperProcessor, WaveFoldShape) {
 
 TEST(WaveshaperProcessor, NullBufferNoCrash) {
     sonicforge::WaveshaperProcessor ws;
-    ws.process_block(nullptr, 256);  // should be safe
+    ws.process_block(nullptr, 256); // should be safe
 }
 
 // ===================================================================
@@ -334,7 +333,7 @@ TEST(DelayLineNone, FeedbackDecay) {
     const float feedback = 0.5F;
 
     // Apply feedback externally: write (dry + feedback * wet)
-    (void)dl.process(1.0F);  // impulse (dry only on first sample)
+    (void)dl.process(1.0F); // impulse (dry only on first sample)
 
     float prev = 0.0F;
     // The output should decay over time due to feedback < 1
@@ -342,8 +341,7 @@ TEST(DelayLineNone, FeedbackDecay) {
         const float wet = dl.read();
         const float out = dl.process(0.0F + feedback * wet);
         if (i > 2) {
-            EXPECT_LE(std::fabs(out), std::fabs(prev) + 1e-4F)
-                << "Output should decay with feedback < 1";
+            EXPECT_LE(std::fabs(out), std::fabs(prev) + 1e-4F) << "Output should decay with feedback < 1";
         }
         prev = out;
     }
@@ -368,7 +366,7 @@ TEST(DelayLineNone, ProcessBlock) {
     dl.set_delay(5.0F);
 
     std::vector<float> buf(256, 0.0F);
-    buf[0] = 1.0F;  // impulse at start
+    buf[0] = 1.0F; // impulse at start
     dl.process_block(buf.data(), buf.size());
 
     // The impulse should have been delayed; find where it emerged
@@ -435,7 +433,7 @@ TEST(DelayLineLagrange3rd, FractionalDelayAccuracy) {
     dl.set_delay(5.5F);
 
     (void)dl.process(1.0F);
-    for (int i = 1; i < 6; ++i)  // 5 zeros → write_pos=6 at the time of reading
+    for (int i = 1; i < 6; ++i) // 5 zeros → write_pos=6 at the time of reading
         (void)dl.process(0.0F);
 
     // Read at write_pos=6, delay=5.5.  The 4-tap Lagrange window straddles the
@@ -499,7 +497,7 @@ TEST(Integration, OscillatorChain) {
     sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 2000.0F, 0.3F, 48000.0F};
     sonicforge::WaveshaperProcessor ws{sonicforge::WaveshaperShape::Tanh, 2.0F};
     sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> dl{24000};
-    dl.set_delay(4800.0F);  // 100 ms
+    dl.set_delay(4800.0F); // 100 ms
     dl.set_feedback(0.3F);
 
     // Generate a simple oscillator and process through the chain
@@ -513,7 +511,7 @@ TEST(Integration, OscillatorChain) {
 
         // Apply smoothed frequency (just verify it works)
         for (int i = 0; i < 256; ++i) {
-            (void)freq_smooth.process();  // advance the ramp
+            (void)freq_smooth.process(); // advance the ramp
         }
 
         // Filter

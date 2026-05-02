@@ -118,7 +118,7 @@ namespace sonicforge {
     if (x > 1.0F) {
         x = 2.0F - x;
         if (x < -1.0F)
-            x = -2.0F - x;  // catch double-fold
+            x = -2.0F - x; // catch double-fold
     } else if (x < -1.0F) {
         x = -2.0F - x;
         if (x > 1.0F)
@@ -158,9 +158,9 @@ enum class WaveshaperShape : uint8_t { Tanh, Poly, HardClip, WaveFold };
  */
 class WaveshaperProcessor {
 public:
-    explicit WaveshaperProcessor(WaveshaperShape shape = WaveshaperShape::Tanh,
-                                 float drive = 1.0F) noexcept
-        : shape_{shape}, drive_{drive} {}
+    explicit WaveshaperProcessor(WaveshaperShape shape = WaveshaperShape::Tanh, float drive = 1.0F) noexcept
+        : shape_{shape},
+          drive_{drive} {}
 
     /**
      * @brief Process a single sample
@@ -225,6 +225,6 @@ inline void WaveshaperProcessor::process_block(float* buffer, std::size_t num_sa
     }
 }
 
-}  // namespace sonicforge
+} // namespace sonicforge
 
-#endif  // SONICFORGE_WAVESHAPER_HPP
+#endif // SONICFORGE_WAVESHAPER_HPP

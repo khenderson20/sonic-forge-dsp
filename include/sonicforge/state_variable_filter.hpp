@@ -86,8 +86,8 @@ public:
      * @param resonance  Resonance amount in [0, 1]  (1 = self-oscillation edge)
      * @param sample_rate Audio sample rate in Hz (default 48 kHz)
      */
-    StateVariableFilter(FilterMode mode = FilterMode::Lowpass, float cutoff_hz = 1000.0F,
-                        float resonance = 0.5F, float sample_rate = 48000.0F);
+    StateVariableFilter(FilterMode mode = FilterMode::Lowpass, float cutoff_hz = 1000.0F, float resonance = 0.5F,
+                        float sample_rate = 48000.0F);
 
     // -----------------------------------------------------------------------
     // Audio processing
@@ -146,19 +146,19 @@ private:
     // Cached values for change detection (audio thread only)
     float cached_cutoff_hz_{-1.0F};
     float cached_resonance_{-1.0F};
-    FilterMode cached_mode_{FilterMode::Highpass};  // deliberately different
+    FilterMode cached_mode_{FilterMode::Highpass}; // deliberately different
     float cached_sample_rate_{-1.0F};
 
     // Filter coefficients (recomputed when parameters change)
-    float g_ = 0.0F;  // tan(pi * fc / fs)
-    float R_ = 1.0F;  // 1 / Q  (damping)
-    float H_ = 0.0F;  // 1 / (1 + R*g + g^2)
+    float g_ = 0.0F; // tan(pi * fc / fs)
+    float R_ = 1.0F; // 1 / Q  (damping)
+    float H_ = 0.0F; // 1 / (1 + R*g + g^2)
 
     // State variables (integrator outputs)
     float ic1eq_ = 0.0F;
     float ic2eq_ = 0.0F;
 };
 
-}  // namespace sonicforge
+} // namespace sonicforge
 
-#endif  // SONICFORGE_STATE_VARIABLE_FILTER_HPP
+#endif // SONICFORGE_STATE_VARIABLE_FILTER_HPP

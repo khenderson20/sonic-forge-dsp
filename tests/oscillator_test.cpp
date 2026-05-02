@@ -397,14 +397,13 @@ TEST(OscillatorSampleAt, PhaseWrapsConsistently) {
 
     for (const auto wf : waveforms) {
         for (int i = 0; i < 20; ++i) {
-            const float base = static_cast<float>(i) / 20.0F;  // [0, 1)
-            const float shift = base + 1.0F;                   // [1, 2)
+            const float base = static_cast<float>(i) / 20.0F; // [0, 1)
+            const float shift = base + 1.0F;                  // [1, 2)
 
             const float s_base = sonicforge::Oscillator::sample_at(wf, base, dt);
             const float s_shift = sonicforge::Oscillator::sample_at(wf, shift, dt);
 
-            EXPECT_NEAR(s_base, s_shift, 1e-6F)
-                << "waveform=" << static_cast<int>(wf) << "  phase=" << base;
+            EXPECT_NEAR(s_base, s_shift, 1e-6F) << "waveform=" << static_cast<int>(wf) << "  phase=" << base;
         }
     }
 }
@@ -417,7 +416,7 @@ TEST(OscillatorSampleAt, PhaseWrapsConsistently) {
  */
 TEST(OscillatorSampleAt, WavetablePeakMatchesProcessPeak) {
     constexpr int n_pts = 256;
-    constexpr float dt = 1.0F / static_cast<float>(n_pts);  // one cycle in n_pts steps
+    constexpr float dt = 1.0F / static_cast<float>(n_pts); // one cycle in n_pts steps
 
     const std::array<sonicforge::Waveform, 4> waveforms = {
         sonicforge::Waveform::SINE,
@@ -439,11 +438,9 @@ TEST(OscillatorSampleAt, WavetablePeakMatchesProcessPeak) {
         float max_got = 0.0F;
         for (int i = 0; i < n_pts; ++i) {
             const float phase = static_cast<float>(i) * dt;
-            max_got =
-                std::max(max_got, std::fabs(sonicforge::Oscillator::sample_at(wf, phase, dt)));
+            max_got = std::max(max_got, std::fabs(sonicforge::Oscillator::sample_at(wf, phase, dt)));
         }
 
-        EXPECT_NEAR(max_got, max_ref, 1e-4F)
-            << "peak mismatch for waveform=" << static_cast<int>(wf);
+        EXPECT_NEAR(max_got, max_ref, 1e-4F) << "peak mismatch for waveform=" << static_cast<int>(wf);
     }
 }

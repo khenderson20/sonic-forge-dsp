@@ -76,7 +76,7 @@ static void update_norm() noexcept {
 /// Maximum samples in the visualisation buffer (worst case: 32 slices × 256 pts).
 static constexpr int VIZ_MAX_SLICES = 32;
 static constexpr int VIZ_MAX_PTS = 256;
-static constexpr int VIZ_MAX_SAMPLES = VIZ_MAX_SLICES * VIZ_MAX_PTS;  // 8 192
+static constexpr int VIZ_MAX_SAMPLES = VIZ_MAX_SLICES * VIZ_MAX_PTS; // 8 192
 
 /// Dedicated visualisation output buffer.  Written by viz_render_wavetable()
 /// and read back by JS via a Float32Array view returned by get_viz_buffer().
@@ -216,8 +216,7 @@ int viz_render_wavetable(int slices, int n_pts, int waveform_idx, int harmonics,
 
     // --- Render each slice --------------------------------------------------
     for (int s = 0; s < slices; ++s) {
-        const float decay_factor =
-            1.0F - (static_cast<float>(s) / static_cast<float>(slices)) * decay_pct;
+        const float decay_factor = 1.0F - (static_cast<float>(s) / static_cast<float>(slices)) * decay_pct;
 
         float* slice = g_viz_buffer + (s * n_pts);
 
@@ -586,4 +585,4 @@ void audio_set_glide_ms(float ms) {
     }
 }
 
-}  // extern "C"
+} // extern "C"
