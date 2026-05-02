@@ -120,7 +120,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DSONICFORGE_BUILD_TESTS=ON \
             -DSONICFORGE_BUILD_EXAMPLES=ON \
-            -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF
+            -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF \
+            -DSONICFORGE_ENABLE_LTO=OFF
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
@@ -132,7 +133,8 @@ jobs:
             -G "Visual Studio 17 2022" -A x64 `
             -DSONICFORGE_BUILD_TESTS=ON `
             -DSONICFORGE_BUILD_EXAMPLES=ON `
-            -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF
+            -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF `
+            -DSONICFORGE_ENABLE_LTO=OFF
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
