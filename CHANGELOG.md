@@ -37,3 +37,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - clang-format and clang-tidy enforcement in CI.
 - CMake install targets with pkg-config support (`sonicforge.pc`).
 - Doxygen documentation (`Doxyfile`).
+
+---
+
+[Unreleased]: https://github.com/khenderson20/sonic-forge-dsp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/khenderson20/sonic-forge-dsp/releases/tag/v0.1.0
