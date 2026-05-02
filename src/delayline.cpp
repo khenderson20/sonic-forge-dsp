@@ -16,10 +16,18 @@ static inline int wrap_index(int idx, int size) noexcept {
 // None
 // ===================================================================
 
-DelayLine<DelayInterpolation::None>::DelayLine(std::size_t max_samples)
-    : buffer_(max_samples, 0.0F) {}
+DelayLine<DelayInterpolation::None>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
 
 void DelayLine<DelayInterpolation::None>::set_max_delay(std::size_t max_samples) {
+    if (max_samples == 0)
+        max_samples = 1;
+
+    // Clamp current delay to new max to prevent buffer overflow
+    if (delay_samples_ >= static_cast<float>(max_samples)) {
+        delay_samples_ = static_cast<float>(max_samples - 1);
+        int_delay_ = static_cast<int>(max_samples - 1);
+    }
+
     buffer_.assign(max_samples, 0.0F);
     write_pos_ = 0;
 }
@@ -66,10 +74,17 @@ void DelayLine<DelayInterpolation::None>::reset() noexcept {
 // Linear
 // ===================================================================
 
-DelayLine<DelayInterpolation::Linear>::DelayLine(std::size_t max_samples)
-    : buffer_(max_samples, 0.0F) {}
+DelayLine<DelayInterpolation::Linear>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
 
 void DelayLine<DelayInterpolation::Linear>::set_max_delay(std::size_t max_samples) {
+    if (max_samples == 0)
+        max_samples = 1;
+
+    // Clamp current delay to new max to prevent buffer overflow
+    if (delay_samples_ >= static_cast<float>(max_samples)) {
+        delay_samples_ = static_cast<float>(max_samples - 1);
+    }
+
     buffer_.assign(max_samples, 0.0F);
     write_pos_ = 0;
 }
@@ -90,8 +105,7 @@ float DelayLine<DelayInterpolation::Linear>::read_internal(float delay_samples) 
     const float frac = delay_samples - std::floor(delay_samples);
     // write_pos points to the NEXT write slot; most recent sample is at write_pos-1.
     // A delay of d samples means: index = write_pos - floor(d)
-    const int idx0 =
-        wrap_index(static_cast<int>(write_pos_) - static_cast<int>(std::floor(delay_samples)), sz);
+    const int idx0 = wrap_index(static_cast<int>(write_pos_) - static_cast<int>(std::floor(delay_samples)), sz);
     const int idx1 = wrap_index(idx0 - 1, sz);
 
     const float s0 = buffer_[static_cast<std::size_t>(idx0)];
@@ -129,10 +143,17 @@ void DelayLine<DelayInterpolation::Linear>::reset() noexcept {
 // Lagrange3rd
 // ===================================================================
 
-DelayLine<DelayInterpolation::Lagrange3rd>::DelayLine(std::size_t max_samples)
-    : buffer_(max_samples, 0.0F) {}
+DelayLine<DelayInterpolation::Lagrange3rd>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
 
 void DelayLine<DelayInterpolation::Lagrange3rd>::set_max_delay(std::size_t max_samples) {
+    if (max_samples == 0)
+        max_samples = 1;
+
+    // Clamp current delay to new max to prevent buffer overflow
+    if (delay_samples_ >= static_cast<float>(max_samples)) {
+        delay_samples_ = static_cast<float>(max_samples - 1);
+    }
+
     buffer_.assign(max_samples, 0.0F);
     write_pos_ = 0;
 }
@@ -145,8 +166,7 @@ void DelayLine<DelayInterpolation::Lagrange3rd>::set_feedback(float amount) noex
     feedback_ = std::max(0.0F, std::min(amount, 0.9999F));
 }
 
-float DelayLine<DelayInterpolation::Lagrange3rd>::read_internal(
-    float delay_samples) const noexcept {
+float DelayLine<DelayInterpolation::Lagrange3rd>::read_internal(float delay_samples) const noexcept {
     if (buffer_.empty())
         return 0.0F;
     const int sz = static_cast<int>(buffer_.size());
@@ -155,8 +175,7 @@ float DelayLine<DelayInterpolation::Lagrange3rd>::read_internal(
     // For a 4-tap Lagrange polynomial where c1=1 at frac=0, the integer-delay
     // tap is at (base-1).  Shift base by +1 so that delay_samples=d returns
     // buffer[write_pos - d] for integer d (consistent with the Linear mode).
-    const int base = wrap_index(
-        static_cast<int>(write_pos_) - static_cast<int>(std::floor(delay_samples)) + 1, sz);
+    const int base = wrap_index(static_cast<int>(write_pos_) - static_cast<int>(std::floor(delay_samples)) + 1, sz);
 
     // 4-tap Lagrange coefficients
     const float f = frac;
@@ -190,8 +209,7 @@ float DelayLine<DelayInterpolation::Lagrange3rd>::process(float in) noexcept {
     return out;
 }
 
-void DelayLine<DelayInterpolation::Lagrange3rd>::process_block(float* buffer,
-                                                               std::size_t n) noexcept {
+void DelayLine<DelayInterpolation::Lagrange3rd>::process_block(float* buffer, std::size_t n) noexcept {
     if (!buffer || n == 0)
         return;
     for (std::size_t i = 0; i < n; ++i)
@@ -203,4 +221,4 @@ void DelayLine<DelayInterpolation::Lagrange3rd>::reset() noexcept {
     write_pos_ = 0;
 }
 
-}  // namespace sonicforge
+} // namespace sonicforge

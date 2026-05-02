@@ -39,7 +39,6 @@
 #define SONICFORGE_OSCILLATOR_HPP
 
 #include <atomic>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -49,10 +48,10 @@ namespace sonicforge {
  * @brief Available waveform types for the oscillator
  */
 enum class Waveform : uint8_t {
-    SINE,     ///< Pure sine wave — fundamental, LUT-accelerated
-    SAW,      ///< Sawtooth wave — rich harmonics, PolyBLEP anti-aliased
-    SQUARE,   ///< Square wave — odd harmonics only, PolyBLEP anti-aliased
-    TRIANGLE  ///< Triangle wave — softer odd harmonics, naturally band-limited
+    SINE,    ///< Pure sine wave — fundamental, LUT-accelerated
+    SAW,     ///< Sawtooth wave — rich harmonics, PolyBLEP anti-aliased
+    SQUARE,  ///< Square wave — odd harmonics only, PolyBLEP anti-aliased
+    TRIANGLE ///< Triangle wave — softer odd harmonics, naturally band-limited
 };
 
 /**
@@ -102,8 +101,7 @@ public:
      *        Non-positive frequency or sample_rate values are replaced by
      *        their respective defaults (440 Hz / 48000 Hz).
      */
-    explicit Oscillator(Waveform waveform = Waveform::SINE, float frequency = 440.0F,
-                        float sample_rate = 48000.0F);
+    explicit Oscillator(Waveform waveform = Waveform::SINE, float frequency = 440.0F, float sample_rate = 48000.0F);
 
     /**
      * @brief Generate the next audio sample
@@ -306,6 +304,6 @@ private:
     static constexpr float TWO_PI = 2.0F * 3.14159265358979323846F;
 };
 
-}  // namespace sonicforge
+} // namespace sonicforge
 
-#endif  // SONICFORGE_OSCILLATOR_HPP
+#endif // SONICFORGE_OSCILLATOR_HPP

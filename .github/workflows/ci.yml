@@ -247,4 +247,71 @@ jobs:
             --warnings-as-errors='*' \
             -p build \
             src/oscillator.cpp \
-            tests/oscillator_test.cpp
+            src/state_variable_filter.cpp \
+            src/delayline.cpp \
+            tests/oscillator_test.cpp \
+            tests/new_modules_test.cpp
+
+  # ===========================================================================
+  # Job 4: WebAssembly build — verify sonicforge_worklet.cpp compiles with Emscripten
+  # ===========================================================================
+  wasm-build:
+    name: WebAssembly build (Emscripten)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+
+      - name: Configure CMake (Emscripten)
+        working-directory: web
+        run: emcmake cmake -B build-web -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Wasm
+        working-directory: web
+        run: cmake --build build-web --parallel
+
+  # ===========================================================================
+  # Job 5: Deploy Doxygen API docs to GitHub Pages (push to main only)
+  # ===========================================================================
+  docs:
+    name: Deploy API docs to GitHub Pages
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-and-test]
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Doxygen
+        run: sudo apt-get install -y doxygen graphviz
+
+      - name: Generate docs
+        run: doxygen Doxyfile
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/html
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

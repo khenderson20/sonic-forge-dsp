@@ -13,8 +13,7 @@ namespace sonicforge {
 
 static constexpr float PI = 3.14159265358979323846F;
 
-StateVariableFilter::StateVariableFilter(FilterMode mode, float cutoff_hz, float resonance,
-                                         float sample_rate) {
+StateVariableFilter::StateVariableFilter(FilterMode mode, float cutoff_hz, float resonance, float sample_rate) {
     // Invalid enum values silently fall back to Lowpass.
     // Note: FilterMode is backed by uint8_t, so only check upper bound.
     if (static_cast<std::underlying_type_t<FilterMode>>(mode) > 3)
@@ -54,7 +53,7 @@ float StateVariableFilter::process(float in) noexcept {
     //   bp = v1           notch = in - R*v1
 
     const float v3 = in - ic2eq_;
-    const float v1 = H_ * (ic1eq_ + g_ * v3);  // H_ = 1/(1 + R*g + g^2)
+    const float v1 = H_ * (ic1eq_ + g_ * v3); // H_ = 1/(1 + R*g + g^2)
     const float v2 = ic2eq_ + g_ * v1;
 
     ic1eq_ = 2.0F * v1 - ic1eq_;
@@ -70,7 +69,6 @@ float StateVariableFilter::process(float in) noexcept {
         case FilterMode::Notch:
             return in - R_ * v1;
     }
-    return v2;  // unreachable
 }
 
 void StateVariableFilter::process_block(float* buffer, std::size_t n) noexcept {
@@ -137,9 +135,9 @@ void StateVariableFilter::recalc_coefficients() noexcept {
 
     // Resonance damping: Q = 1/(2*res) mapped so 0 → no resonance, 1 → edge
     const float res = cached_resonance_;
-    R_ = 2.0F * (1.0F - std::min(res, 0.99F));  // 2 → 0.02
+    R_ = 2.0F * (1.0F - std::min(res, 0.99F)); // 2 → 0.02
 
     H_ = 1.0F / (1.0F + R_ * g_ + g_ * g_);
 }
 
-}  // namespace sonicforge
+} // namespace sonicforge

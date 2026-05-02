@@ -78,6 +78,11 @@ option(SONICFORGE_OPTIMIZE_FOR_HOST
     OFF
 )
 
+option(SONICFORGE_ENABLE_LTO
+    "Enable link-time optimisation for Release builds (INTERPROCEDURAL_OPTIMIZATION)"
+    ON
+)
+
 # =============================================================================
 # Main Library Target
 # =============================================================================
@@ -100,6 +105,23 @@ set_target_properties(sonicforge PROPERTIES
     SOVERSION ${PROJECT_VERSION_MAJOR}
     POSITION_INDEPENDENT_CODE ON
 )
+
+# =============================================================================
+# Link-Time Optimization (LTO)
+# =============================================================================
+# Uses INTERPROCEDURAL_OPTIMIZATION_RELEASE so it activates only for Release
+# on both single-config (Unix Makefiles/Ninja) and multi-config (Visual Studio)
+# generators.  CheckIPOSupported guards against toolchains that don't have it.
+if(SONICFORGE_ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_msg LANGUAGES CXX)
+    if(_ipo_ok)
+        set_target_properties(sonicforge PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+        message(STATUS "  LTO:  ON (Release builds)")
+    else()
+        message(STATUS "  LTO:  not available (${_ipo_msg})")
+    endif()
+endif()
 
 # =============================================================================
 # WebAssembly Build (requires Emscripten toolchain)
@@ -210,5 +232,6 @@ message(STATUS "  Build Type:     ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build Examples: ${SONICFORGE_BUILD_EXAMPLES}")
 message(STATUS "  Build Tests:    ${SONICFORGE_BUILD_TESTS} (GoogleTest via CPM)")
 message(STATUS "  Host Opt:       ${SONICFORGE_OPTIMIZE_FOR_HOST}")
+message(STATUS "  LTO:            ${SONICFORGE_ENABLE_LTO}")
 message(STATUS "")
 message(STATUS "  Build Web:      ${SONICFORGE_BUILD_WEB}")

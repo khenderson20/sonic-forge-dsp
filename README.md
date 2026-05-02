@@ -10,6 +10,7 @@ A lightweight C++ oscillator and effects library for real-time audio synthesis, 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/khenderson20/sonic-forge-dsp/actions/workflows/ci.yml/badge.svg)](https://github.com/khenderson20/sonic-forge-dsp/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://khenderson20.github.io/sonic-forge-dsp/)
 
 ---
 
@@ -71,6 +72,7 @@ SonicForge DSP provides a collection of zero-allocation, thread-safe audio proce
 | `SONICFORGE_BUILD_EXAMPLES` | `ON` | Build example programs |
 | `SONICFORGE_BUILD_WEB` | `OFF` | Build WebAssembly AudioWorklet module (requires `emcmake cmake`) |
 | `SONICFORGE_OPTIMIZE_FOR_HOST` | `OFF` | Add `-march=native` to Release builds |
+| `SONICFORGE_ENABLE_LTO` | `ON` | Enable link-time optimisation for Release builds |
 
 ### Build Types
 
@@ -81,7 +83,7 @@ cmake -B build -DSONICFORGE_BUILD_TESTS=ON
 # Release (optimized)
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DSONICFORGE_BUILD_TESTS=ON
 
-# Ninja (f incremental builds)
+# Ninja (for incremental builds)
 cmake -B build -G Ninja -DSONICFORGE_BUILD_TESTS=ON
 ```
 
@@ -189,7 +191,32 @@ float tap = dl.read(4800.5F);  // fractional read (no feedback)
 
 ### Linking to Your Project
 
-**Via pkg-config:**
+**Via CMake FetchContent (recommended — no install step needed):**
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    sonicforge
+    GIT_REPOSITORY https://github.com/khenderson20/sonic-forge-dsp.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(sonicforge)
+target_link_libraries(your_target PRIVATE sonicforge)
+```
+
+**Via CMake subdirectory (vendored copy):**
+
+```cmake
+add_subdirectory(path/to/sonic-forge-dsp)
+target_link_libraries(your_target PRIVATE sonicforge)
+```
+
+**Via pkg-config (requires `cmake --install` first):**
+
+```bash
+cmake --install build                          # installs to /usr/local by default
+cmake --install build --prefix /your/prefix   # or a custom prefix
+```
 
 ```cmake
 find_package(PkgConfig REQUIRED)
@@ -197,11 +224,19 @@ pkg_check_modules(SONICFORGE REQUIRED IMPORTED_TARGET sonicforge)
 target_link_libraries(your_target PRIVATE PkgConfig::SONICFORGE)
 ```
 
-**Manual compilation:**
+If installed to a non-default prefix, tell pkg-config where to look:
 
 ```bash
-g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
+export PKG_CONFIG_PATH=/your/prefix/lib/pkgconfig:$PKG_CONFIG_PATH
 ```
+
+**Manual compilation (requires `cmake --install` first):**
+
+```bash
+g++ -std=c++17 -I/usr/local/include your_code.cpp -L/usr/local/lib -lsonicforge -o your_app
+```
+
+Replace `/usr/local` with your install prefix if it differs.
 
 ---
 
@@ -211,11 +246,11 @@ g++ -std=c++17 your_code.cpp -lsonicforge -o your_app
 
 | Module | Cases | Coverage |
 |--------|-------|----------|
-| Oscillator | 19 | Construction, range, PolyBLEP, LUT accuracy, block/sample processing |
+| Oscillator | 22 | Construction, range, PolyBLEP, LUT accuracy, block/sample processing, sample_at static evaluation |
 | SmoothedValue | 7 | Linear/multiplicative ramping, snap, process_block |
 | StateVariableFilter | 10 | LP/HP attenuation, DC pass-through, clamping, reset |
-| Waveshaper | 8 | Transfer function bounds, processor, null safety |
-| DelayLine | 10 | Integer/fractional delay, feedback, interpolation modes, reset |
+| Waveshaper | 10 | Transfer function bounds (tanh, poly, hard clip, fold, rectify), processor, null safety |
+| DelayLine | 11 | Integer/fractional delay, feedback, interpolation modes, reset |
 | Integration | 1 | Full chain: oscillator → SVF → waveshaper → delay |
 
 ```bash
@@ -230,8 +265,8 @@ The project enforces formatting and static analysis via pre-commit hooks and CI:
 
 | Tool | Purpose |
 |------|---------|
-| `clang-format-18` | Enforces consistent code style (ColumnLimit 100, 4-space indent) |
-| `clang-tidy-18` | Static analysis with `--warnings-as-errors='*'` (bugprone, modernize, performance, readability) |
+| `clang-format-18` | Enforces consistent code style (ColumnLimit 120, 4-space indent) |
+| `clang-tidy-18` | Static analysis with `--warnings-as-errors='*'` (bugprone, cppcoreguidelines, misc, modernize, performance, readability, clang-analyzer) |
 
 **Generate compile_commands.json and run clang-tidy:**
 
@@ -285,10 +320,21 @@ GoogleTest is used solely for the test suite and is fetched automatically by CPM
 
 ## Documentation
 
-Generate API documentation with Doxygen:
+The API reference is published automatically to GitHub Pages on every merge to `main`:
+
+**https://khenderson20.github.io/sonic-forge-dsp/**
+
+To build the docs locally:
 
 ```bash
 doxygen Doxyfile
 ```
 
-Output will be available in `docs/html/index.html`.
+Output will be available at `docs/html/index.html`.
+
+---
+
+## Changelog and Roadmap
+
+- [CHANGELOG.md](CHANGELOG.md) — per-version history of changes
+- [ROADMAP.md](ROADMAP.md) — planned features and longer-term direction

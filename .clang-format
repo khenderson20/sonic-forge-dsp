@@ -1,5 +1,5 @@
 # SonicForge DSP Clang-Format Configuration
-# Based on LLVM style with modifications for audio DSP code readability
+# Optimized for C++ DSP code readability and modern standards
 
 Language: Cpp
 BasedOnStyle: LLVM
@@ -13,7 +13,7 @@ IndentPPDirectives: BeforeHash
 NamespaceIndentation: None
 
 # Line Length
-ColumnLimit: 100
+ColumnLimit: 120
 
 # Braces
 BreakBeforeBraces: Attach
@@ -45,18 +45,11 @@ SpaceBeforeRangeBasedForLoopColon: true
 SpaceBeforeSquareBrackets: false
 SpaceInEmptyBlock: false
 SpaceInEmptyParentheses: false
-SpacesBeforeTrailingComments: 2
-SpacesInAngles: false
-SpacesInCStyleCastParentheses: false
-SpacesInConditionalStatement: false
-SpacesInContainerLiterals: true
-SpacesInParentheses: false
-SpacesInSquareBrackets: false
 
 # Includes
 IncludeBlocks: Regroup
 IncludeCategories:
-  # Project headers (sonicforge)
+  # Project headers (sonicforge) - Highest priority
   - Regex: '^<sonicforge/'
     Priority: 1
   # C++ standard library headers
@@ -65,15 +58,15 @@ IncludeCategories:
   # System/external headers
   - Regex: '^<'
     Priority: 2
-  # Local headers
+  # Local headers - Lowest priority
   - Regex: '.*'
     Priority: 4
 SortIncludes: true
 
 # Breaking
 AllowAllArgumentsOnNextLine: true
-AllowAllConstructorInitializersOnNextLine: true
 AllowAllParametersOfDeclarationOnNextLine: true
+PackConstructorInitializers: CurrentLine
 BinPackArguments: true
 BinPackParameters: true
 BreakBeforeBinaryOperators: None
@@ -84,7 +77,6 @@ BreakStringLiterals: true
 
 # Class/Struct
 AccessModifierOffset: -4
-ConstructorInitializerAllOnOneLineOrOnePerLine: true
 ConstructorInitializerIndentWidth: 4
 
 # Pointers and References

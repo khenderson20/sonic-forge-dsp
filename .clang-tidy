@@ -63,12 +63,6 @@ CheckOptions:
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
   
-  # Allow short variable names common in DSP
-  - key: readability-identifier-length.MinimumVariableNameLength
-    value: 1
-  - key: readability-identifier-length.MinimumParameterNameLength
-    value: 1
-  
   # Performance settings
   - key: performance-unnecessary-value-param.AllowedTypes
     value: 'Waveform;FilterType'
