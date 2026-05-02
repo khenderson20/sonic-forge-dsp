@@ -12,18 +12,30 @@
 # Setup (one-time per clone):
 #   pip install pre-commit        # or: brew install pre-commit
 #   pre-commit install
+#   pre-commit install --hook-type pre-push
 #
 # Verify all hooks pass without committing:
 #   pre-commit run --all-files
 #
 # Skip a single hook for a WIP commit:
-#   SKIP=cmake-build-test git commit -m "wip: ..."
+#   SKIP=clang-tidy git commit -m "wip: ..."
 #
 # Skip all hooks (emergency bypass — prefer the above when possible):
 #   git commit --no-verify
 # =============================================================================
 
 repos:
+  # ── Standard hygiene hooks ─────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-large-files
+        args: [--maxkb=500]
+
   - repo: local
     hooks:
 
@@ -41,10 +53,10 @@ repos:
       # ── 2. clang-tidy ──────────────────────────────────────────────────────
       # Runs static analysis on the core library and test translation units
       # whenever any file under src/, tests/, or include/ is staged.
-      # Always analyses the same two fixed paths as CI (not just changed files)
+      # Always analyses the same fixed paths as CI (not just changed files)
       # so the analysis is complete and consistent.
       # Requires compile_commands.json; auto-configures cmake if absent.
-      # Mirrors: clang-tidy-18 --warnings-as-errors='*' -p build <files>
+      # Mirrors: clang-tidy-18 -checks='clang-analyzer-*,bugprone-*,...' -p build <files>
       - id: clang-tidy
         name: "clang-tidy: static analysis"
         language: system
@@ -56,16 +68,13 @@ repos:
 
       # ── 3. cmake build + ctest ─────────────────────────────────────────────
       # Incrementally rebuilds the project and runs the full test suite.
-      # Runs on every commit (always_run: true) to guarantee no commit
-      # introduces a build break or test regression.
+      # Runs at pre-push (not pre-commit) so WIP commits stay fast.
+      # Only triggers when source files change.
       # Mirrors: cmake --build build --parallel && ctest --output-on-failure
-      #
-      # This is the most time-consuming hook (~10-30s on a warm build).
-      # Skip it for WIP commits with: SKIP=cmake-build-test git commit
       - id: cmake-build-test
         name: "cmake: build and test"
         language: system
         entry: bash scripts/pre-commit/run-tests.sh
         pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
+        files: ^(src|tests|include|CMakeLists\.txt|cmake)/
+        stages: [pre-push]

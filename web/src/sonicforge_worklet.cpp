@@ -93,7 +93,7 @@ static constexpr std::size_t DELAY_MAX_SAMPLES = 48000;
 // Static instances — constructed once at Wasm startup via _initialize().
 static sonicforge::StateVariableFilter g_filter;
 static sonicforge::WaveshaperProcessor g_waveshaper;
-static sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> g_delay{DELAY_MAX_SAMPLES};
+static sonicforge::DelayLine<sonicforge::DelayInterpolation::LINEAR> g_delay{DELAY_MAX_SAMPLES};
 
 // SmoothedValue for frequency glide (multiplicative ramp = perceptually linear).
 static sonicforge::SmoothedValue<sonicforge::SmoothingMode::Multiplicative> g_freq_smooth;
