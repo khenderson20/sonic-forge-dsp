@@ -16,8 +16,9 @@ static constexpr float PI = 3.14159265358979323846F;
 StateVariableFilter::StateVariableFilter(FilterMode mode, float cutoff_hz, float resonance, float sample_rate) {
     // Invalid enum values silently fall back to Lowpass.
     // Note: FilterMode is backed by uint8_t, so only check upper bound.
-    if (static_cast<std::underlying_type_t<FilterMode>>(mode) > 3)
-        mode = FilterMode::Lowpass;
+    if (static_cast<std::underlying_type_t<FilterMode>>(mode) > 3) {
+        mode = FilterMode::LOWPASS;
+    }
 
     mode_.store(mode, std::memory_order_relaxed);
     sample_rate_.store(sample_rate > 0.0F ? sample_rate : 48000.0F, std::memory_order_relaxed);
@@ -54,28 +55,31 @@ float StateVariableFilter::process(float in) noexcept {
 
     const float v3 = in - ic2eq_;
     const float v1 = H_ * (ic1eq_ + g_ * v3); // H_ = 1/(1 + R*g + g^2)
-    const float v2 = ic2eq_ + g_ * v1;
+    const float v2 = ic2eq_ + (g_ * v1);
 
-    ic1eq_ = 2.0F * v1 - ic1eq_;
-    ic2eq_ = 2.0F * v2 - ic2eq_;
+    ic1eq_ = (2.0F * v1) - ic1eq_;
+    ic2eq_ = (2.0F * v2) - ic2eq_;
 
     switch (cached_mode_) {
-        case FilterMode::Lowpass:
+        case FilterMode::LOWPASS:
             return v2;
-        case FilterMode::Highpass:
-            return in - R_ * v1 - v2;
-        case FilterMode::Bandpass:
+        case FilterMode::HIGHPASS:
+            return in - (R_ * v1) - v2;
+        case FilterMode::BANDPASS:
             return v1;
-        case FilterMode::Notch:
-            return in - R_ * v1;
+        case FilterMode::NOTCH:
+            return in - (R_ * v1);
+            break;
     }
 }
 
 void StateVariableFilter::process_block(float* buffer, std::size_t n) noexcept {
-    if (!buffer || n == 0)
+    if (!buffer || n == 0) {
         return;
-    for (std::size_t i = 0; i < n; ++i)
+    }
+    for (std::size_t i = 0; i < n; ++i) {
         buffer[i] = process(buffer[i]);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -91,15 +95,17 @@ void StateVariableFilter::set_resonance(float q) noexcept {
 }
 
 void StateVariableFilter::set_mode(FilterMode mode) noexcept {
-    if (static_cast<std::underlying_type_t<FilterMode>>(mode) > 3)
+    if (static_cast<std::underlying_type_t<FilterMode>>(mode) > 3) {
         return;
+    }
     mode_.store(mode, std::memory_order_relaxed);
 }
 
-void StateVariableFilter::set_sample_rate(float sr) noexcept {
-    if (sr <= 0.0F)
+void StateVariableFilter::set_sample_rate(float sample_rate) noexcept {
+    if (sample_rate <= 0.0F) {
         return;
-    sample_rate_.store(sr, std::memory_order_relaxed);
+    }
+    sample_rate_.store(sample_rate, std::memory_order_relaxed);
 }
 
 void StateVariableFilter::reset() noexcept {

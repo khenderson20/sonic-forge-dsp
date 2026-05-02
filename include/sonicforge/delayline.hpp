@@ -47,8 +47,6 @@
 #ifndef SONICFORGE_DELAYLINE_HPP
 #define SONICFORGE_DELAYLINE_HPP
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -59,9 +57,9 @@ namespace sonicforge {
  * @brief Interpolation algorithms for fractional delay reads
  */
 enum class DelayInterpolation : uint8_t {
-    None,       /**< Nearest-sample (zero-order hold) */
-    Linear,     /**< Linear interpolation between two samples */
-    Lagrange3rd /**< 3rd-order Lagrange (4-tap) polynomial */
+    NONE,       /**< Nearest-sample (zero-order hold) */
+    LINEAR,     /**< Linear interpolation between two samples */
+    LAGRANGE3RD /**< 3rd-order Lagrange (4-tap) polynomial */
 };
 
 // Forward declarations
@@ -71,7 +69,7 @@ template <DelayInterpolation Interp> class DelayLine;
 // None — integer-only delay
 // ===================================================================
 
-template <> class DelayLine<DelayInterpolation::None> {
+template <> class DelayLine<DelayInterpolation::NONE> {
 public:
     /**
      * @brief Allocate a delay buffer capable of holding @p max_samples
@@ -139,7 +137,7 @@ private:
 // Linear — 2-tap linear interpolation
 // ===================================================================
 
-template <> class DelayLine<DelayInterpolation::Linear> {
+template <> class DelayLine<DelayInterpolation::LINEAR> {
 public:
     explicit DelayLine(std::size_t max_samples);
 
@@ -175,7 +173,7 @@ private:
 // Lagrange3rd — 4-tap cubic Lagrange interpolation
 // ===================================================================
 
-template <> class DelayLine<DelayInterpolation::Lagrange3rd> {
+template <> class DelayLine<DelayInterpolation::LAGRANGE3RD> {
 public:
     explicit DelayLine(std::size_t max_samples);
 

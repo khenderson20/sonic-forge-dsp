@@ -11,7 +11,6 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
-#include <numeric>
 #include <vector>
 
 // Shorthand to avoid repeating sonicforge:: in tests
@@ -118,28 +117,28 @@ TEST(SVFConstruction, DefaultParameters) {
     sonicforge::StateVariableFilter svf;
     EXPECT_NEAR(svf.get_cutoff_hz(), 1000.0F, 1.0F);
     EXPECT_NEAR(svf.get_resonance(), 0.5F, 1e-5F);
-    EXPECT_EQ(svf.get_mode(), sonicforge::FilterMode::Lowpass);
+    EXPECT_EQ(svf.get_mode(), sonicforge::FilterMode::LOWPASS);
     EXPECT_FLOAT_EQ(svf.get_sample_rate(), 48000.0F);
 }
 
 TEST(SVFConstruction, CustomParameters) {
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Highpass, 2000.0F, 0.7F, 44100.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::HIGHPASS, 2000.0F, 0.7F, 44100.0F};
     EXPECT_NEAR(svf.get_cutoff_hz(), 2000.0F, 1.0F);
     EXPECT_NEAR(svf.get_resonance(), 0.7F, 1e-5F);
-    EXPECT_EQ(svf.get_mode(), sonicforge::FilterMode::Highpass);
+    EXPECT_EQ(svf.get_mode(), sonicforge::FilterMode::HIGHPASS);
     EXPECT_FLOAT_EQ(svf.get_sample_rate(), 44100.0F);
 }
 
 TEST(SVFConstruction, InvalidModeDefaultsToLowpass) {
     sonicforge::StateVariableFilter svf{static_cast<sonicforge::FilterMode>(99), 1000.0F, 0.5F};
-    EXPECT_EQ(svf.get_mode(), sonicforge::FilterMode::Lowpass);
+    EXPECT_EQ(svf.get_mode(), sonicforge::FilterMode::LOWPASS);
 }
 
 TEST(SVFProcessing, LowpassAttenuatesHighFrequency) {
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 500.0F, 0.1F, 48000.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::LOWPASS, 500.0F, 0.1F, 48000.0F};
 
-    constexpr int N = 4800; // 100 ms at 48 kHz
-    std::vector<float> buf(N);
+    constexpr int n = 4800; // 100 ms at 48 kHz
+    std::vector<float> buf(n);
 
     // Generate a 5 kHz sine — well above the 500 Hz cutoff
     for (size_t i = 0; i < buf.size(); ++i) {
@@ -150,19 +149,20 @@ TEST(SVFProcessing, LowpassAttenuatesHighFrequency) {
 
     // After filtering, the RMS should be significantly reduced
     float rms = 0.0F;
-    for (float s : buf)
+    for (float s : buf) {
         rms += s * s;
-    rms = std::sqrt(rms / N);
+    }
+    rms = std::sqrt(rms / n);
 
     // Original sine RMS = 0.707; after LP at 500 Hz on 5 kHz signal, should be < 0.1
     EXPECT_LT(rms, 0.1F) << "Lowpass filter should strongly attenuate 5 kHz";
 }
 
 TEST(SVFProcessing, HighpassAttenuatesLowFrequency) {
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Highpass, 2000.0F, 0.1F, 48000.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::HIGHPASS, 2000.0F, 0.1F, 48000.0F};
 
-    constexpr int N = 4800;
-    std::vector<float> buf(N);
+    constexpr int n = 4800;
+    std::vector<float> buf(n);
 
     // 100 Hz sine — well below the 2 kHz cutoff
     for (size_t i = 0; i < buf.size(); ++i) {
@@ -172,15 +172,16 @@ TEST(SVFProcessing, HighpassAttenuatesLowFrequency) {
     svf.process_block(buf.data(), buf.size());
 
     float rms = 0.0F;
-    for (float s : buf)
+    for (float s : buf) {
         rms += s * s;
-    rms = std::sqrt(rms / N);
+    }
+    rms = std::sqrt(rms / n);
 
     EXPECT_LT(rms, 0.1F) << "Highpass filter should strongly attenuate 100 Hz";
 }
 
 TEST(SVFProcessing, DCPassThroughLowpass) {
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 5000.0F, 0.0F, 48000.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::LOWPASS, 5000.0F, 0.0F, 48000.0F};
     svf.reset();
 
     // A constant DC value should pass through a lowpass unchanged (after transient)
@@ -195,7 +196,7 @@ TEST(SVFProcessing, DCPassThroughLowpass) {
 }
 
 TEST(SVFParameters, AtomicCutoffChange) {
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 1000.0F, 0.5F, 48000.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::LOWPASS, 1000.0F, 0.5F, 48000.0F};
     svf.set_cutoff_hz(2000.0F);
     EXPECT_NEAR(svf.get_cutoff_hz(), 2000.0F, 1.0F);
 }
@@ -209,13 +210,13 @@ TEST(SVFParameters, ResonanceClamped) {
 }
 
 TEST(SVFParameters, CutoffClampedToNyquist) {
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 1000.0F, 0.5F, 48000.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::LOWPASS, 1000.0F, 0.5F, 48000.0F};
     svf.set_cutoff_hz(30000.0F); // Above Nyquist (24 kHz)
     EXPECT_LT(svf.get_cutoff_hz(), 24000.0F);
 }
 
 TEST(SVFReset, StateClearsToZero) {
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 1000.0F, 0.5F, 48000.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::LOWPASS, 1000.0F, 0.5F, 48000.0F};
 
     // Process some non-zero signal
     float discard = 0.0F;
@@ -314,13 +315,14 @@ TEST(WaveshaperProcessor, NullBufferNoCrash) {
 // --- None ---
 
 TEST(DelayLineNone, IntegerDelay) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::None> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::NONE> dl{1024};
     dl.set_delay(10.0F);
 
     // Feed an impulse
     (void)dl.process(1.0F);
-    for (int i = 1; i < 10; ++i)
+    for (int i = 1; i < 10; ++i) {
         (void)dl.process(0.0F);
+    }
 
     // The impulse should emerge at sample 10
     const float out = dl.process(0.0F);
@@ -328,7 +330,7 @@ TEST(DelayLineNone, IntegerDelay) {
 }
 
 TEST(DelayLineNone, FeedbackDecay) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::None> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::NONE> dl{1024};
     dl.set_delay(1.0F);
     const float feedback = 0.5F;
 
@@ -339,7 +341,7 @@ TEST(DelayLineNone, FeedbackDecay) {
     // The output should decay over time due to feedback < 1
     for (int i = 0; i < 20; ++i) {
         const float wet = dl.read();
-        const float out = dl.process(0.0F + feedback * wet);
+        const float out = dl.process(0.0F + (feedback * wet));
         if (i > 2) {
             EXPECT_LE(std::fabs(out), std::fabs(prev) + 1e-4F) << "Output should decay with feedback < 1";
         }
@@ -348,11 +350,12 @@ TEST(DelayLineNone, FeedbackDecay) {
 }
 
 TEST(DelayLineNone, ResetClearsBuffer) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::None> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::NONE> dl{1024};
     dl.set_delay(10.0F);
     (void)dl.process(1.0F);
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < 10; ++i) {
         (void)dl.process(0.0F);
+    }
 
     dl.reset();
     // After reset, all output should be zero
@@ -362,7 +365,7 @@ TEST(DelayLineNone, ResetClearsBuffer) {
 }
 
 TEST(DelayLineNone, ProcessBlock) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::None> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::NONE> dl{1024};
     dl.set_delay(5.0F);
 
     std::vector<float> buf(256, 0.0F);
@@ -383,12 +386,13 @@ TEST(DelayLineNone, ProcessBlock) {
 // --- Linear ---
 
 TEST(DelayLineLinear, FractionalDelay) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LINEAR> dl{1024};
     dl.set_delay(5.5F);
 
     (void)dl.process(1.0F);
-    for (int i = 1; i < 6; ++i)
+    for (int i = 1; i < 6; ++i) {
         (void)dl.process(0.0F);
+    }
 
     // At fractional delay 5.5, the output at sample 6 should be the
     // average of samples at integer positions 5 and 6 (both 0 and the impulse at 0)
@@ -398,10 +402,11 @@ TEST(DelayLineLinear, FractionalDelay) {
 }
 
 TEST(DelayLineLinear, ReadWithoutFeedback) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LINEAR> dl{1024};
     // Write some samples into the buffer
-    for (int i = 0; i < 20; ++i)
+    for (int i = 0; i < 20; ++i) {
         (void)dl.process(static_cast<float>(i));
+    }
 
     // Read at fractional position
     const float val = dl.read(3.0F);
@@ -410,13 +415,14 @@ TEST(DelayLineLinear, ReadWithoutFeedback) {
 }
 
 TEST(DelayLineLinear, ProcessBlock) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LINEAR> dl{1024};
     dl.set_delay(5.0F);
     dl.set_feedback(0.0F);
 
     std::vector<float> buf(256);
-    for (auto& s : buf)
+    for (auto& s : buf) {
         s = 1.0F;
+    }
     dl.process_block(buf.data(), buf.size());
 
     // With delay=5 and read-before-write semantics, sample i=5 is the first
@@ -429,12 +435,13 @@ TEST(DelayLineLinear, ProcessBlock) {
 // --- Lagrange3rd ---
 
 TEST(DelayLineLagrange3rd, FractionalDelayAccuracy) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Lagrange3rd> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LAGRANGE3RD> dl{1024};
     dl.set_delay(5.5F);
 
     (void)dl.process(1.0F);
-    for (int i = 1; i < 6; ++i) // 5 zeros → write_pos=6 at the time of reading
+    for (int i = 1; i < 6; ++i) { // 5 zeros → write_pos=6 at the time of reading
         (void)dl.process(0.0F);
+    }
 
     // Read at write_pos=6, delay=5.5.  The 4-tap Lagrange window straddles the
     // impulse at buffer[0], so the output should be close to 0.5 (within ±0.1).
@@ -443,11 +450,12 @@ TEST(DelayLineLagrange3rd, FractionalDelayAccuracy) {
 }
 
 TEST(DelayLineLagrange3rd, ReadAtIntegerDelay) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Lagrange3rd> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LAGRANGE3RD> dl{1024};
 
     // Fill buffer with known ramp
-    for (int i = 0; i < 50; ++i)
+    for (int i = 0; i < 50; ++i) {
         (void)dl.process(static_cast<float>(i));
+    }
 
     // Read at integer delay (4.0) — should interpolate to exact value
     const float val = dl.read(4.0F);
@@ -456,13 +464,14 @@ TEST(DelayLineLagrange3rd, ReadAtIntegerDelay) {
 }
 
 TEST(DelayLineLagrange3rd, ProcessBlock) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Lagrange3rd> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LAGRANGE3RD> dl{1024};
     dl.set_delay(5.0F);
     dl.set_feedback(0.0F);
 
     std::vector<float> buf(256);
-    for (auto& s : buf)
+    for (auto& s : buf) {
         s = 1.0F;
+    }
     dl.process_block(buf.data(), buf.size());
 
     for (size_t i = 8; i < buf.size(); ++i) {
@@ -471,11 +480,12 @@ TEST(DelayLineLagrange3rd, ProcessBlock) {
 }
 
 TEST(DelayLineLagrange3rd, ResetClearsBuffer) {
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Lagrange3rd> dl{1024};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LAGRANGE3RD> dl{1024};
     dl.set_delay(10.0F);
     (void)dl.process(1.0F);
-    for (int i = 0; i < 15; ++i)
+    for (int i = 0; i < 15; ++i) {
         (void)dl.process(0.0F);
+    }
 
     dl.reset();
     for (int i = 0; i < 10; ++i) {
@@ -494,9 +504,9 @@ TEST(Integration, OscillatorChain) {
     freq_smooth.set_ramp_duration(0.02F);
     freq_smooth.set_target(880.0F);
 
-    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::Lowpass, 2000.0F, 0.3F, 48000.0F};
+    sonicforge::StateVariableFilter svf{sonicforge::FilterMode::LOWPASS, 2000.0F, 0.3F, 48000.0F};
     sonicforge::WaveshaperProcessor ws{sonicforge::WaveshaperShape::Tanh, 2.0F};
-    sonicforge::DelayLine<sonicforge::DelayInterpolation::Linear> dl{24000};
+    sonicforge::DelayLine<sonicforge::DelayInterpolation::LINEAR> dl{24000};
     dl.set_delay(4800.0F); // 100 ms
     dl.set_feedback(0.3F);
 
@@ -505,7 +515,7 @@ TEST(Integration, OscillatorChain) {
     for (int pass = 0; pass < 10; ++pass) {
         // Simulate oscillator output (simple sine)
         for (size_t i = 0; i < block.size(); ++i) {
-            const float sample_idx = static_cast<float>(pass) * 256.0F + static_cast<float>(i);
+            const float sample_idx = (static_cast<float>(pass) * 256.0F) + static_cast<float>(i);
             block[i] = std::sin(2.0F * 3.14159265F * 440.0F * sample_idx / 48000.0F);
         }
 

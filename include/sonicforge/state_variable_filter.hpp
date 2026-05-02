@@ -48,7 +48,6 @@
 #define SONICFORGE_STATE_VARIABLE_FILTER_HPP
 
 #include <atomic>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -58,10 +57,10 @@ namespace sonicforge {
  * @brief Filter response modes supported by StateVariableFilter
  */
 enum class FilterMode : uint8_t {
-    Lowpass,  /**< Attenuates frequencies above cutoff */
-    Highpass, /**< Attenuates frequencies below cutoff */
-    Bandpass, /**< Passes a narrow band around cutoff */
-    Notch     /**< Rejects a narrow band around cutoff */
+    LOWPASS,  /**< Attenuates frequencies above cutoff */
+    HIGHPASS, /**< Attenuates frequencies below cutoff */
+    BANDPASS, /**< Passes a narrow band around cutoff */
+    NOTCH     /**< Rejects a narrow band around cutoff */
 };
 
 /**
@@ -86,7 +85,7 @@ public:
      * @param resonance  Resonance amount in [0, 1]  (1 = self-oscillation edge)
      * @param sample_rate Audio sample rate in Hz (default 48 kHz)
      */
-    StateVariableFilter(FilterMode mode = FilterMode::Lowpass, float cutoff_hz = 1000.0F, float resonance = 0.5F,
+    StateVariableFilter(FilterMode mode = FilterMode::LOWPASS, float cutoff_hz = 1000.0F, float resonance = 0.5F,
                         float sample_rate = 48000.0F);
 
     // -----------------------------------------------------------------------
@@ -140,13 +139,13 @@ private:
     // Atomic parameters (written from any thread, read in audio thread)
     std::atomic<float> cutoff_hz_{1000.0F};
     std::atomic<float> resonance_{0.5F};
-    std::atomic<FilterMode> mode_{FilterMode::Lowpass};
+    std::atomic<FilterMode> mode_{FilterMode::LOWPASS};
     std::atomic<float> sample_rate_{48000.0F};
 
     // Cached values for change detection (audio thread only)
     float cached_cutoff_hz_{-1.0F};
     float cached_resonance_{-1.0F};
-    FilterMode cached_mode_{FilterMode::Highpass}; // deliberately different
+    FilterMode cached_mode_{FilterMode::HIGHPASS}; // deliberately different
     float cached_sample_rate_{-1.0F};
 
     // Filter coefficients (recomputed when parameters change)

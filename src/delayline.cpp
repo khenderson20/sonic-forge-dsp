@@ -5,22 +5,26 @@
 
 #include "sonicforge/delayline.hpp"
 
-namespace sonicforge {
+#include <array>
+#include <cmath>
 
-static inline int wrap_index(int idx, int size) noexcept {
+namespace {
+
+inline int wrap_index(int idx, int size) noexcept {
     idx %= size;
     return (idx < 0) ? idx + size : idx;
 }
 
-// ===================================================================
-// None
-// ===================================================================
+} // namespace
 
-DelayLine<DelayInterpolation::None>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
+namespace sonicforge {
 
-void DelayLine<DelayInterpolation::None>::set_max_delay(std::size_t max_samples) {
-    if (max_samples == 0)
+DelayLine<DelayInterpolation::NONE>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
+
+void DelayLine<DelayInterpolation::NONE>::set_max_delay(std::size_t max_samples) {
+    if (max_samples == 0) {
         max_samples = 1;
+    }
 
     // Clamp current delay to new max to prevent buffer overflow
     if (delay_samples_ >= static_cast<float>(max_samples)) {
@@ -32,40 +36,44 @@ void DelayLine<DelayInterpolation::None>::set_max_delay(std::size_t max_samples)
     write_pos_ = 0;
 }
 
-void DelayLine<DelayInterpolation::None>::set_delay(float samples) noexcept {
+void DelayLine<DelayInterpolation::NONE>::set_delay(float samples) noexcept {
     delay_samples_ = std::max(0.0F, samples);
     int_delay_ = static_cast<int>(std::round(delay_samples_));
 }
 
-void DelayLine<DelayInterpolation::None>::set_feedback(float amount) noexcept {
+void DelayLine<DelayInterpolation::NONE>::set_feedback(float amount) noexcept {
     feedback_ = std::max(0.0F, std::min(amount, 0.9999F));
 }
 
-float DelayLine<DelayInterpolation::None>::read() const noexcept {
-    if (buffer_.empty())
+float DelayLine<DelayInterpolation::NONE>::read() const noexcept {
+    if (buffer_.empty()) {
         return 0.0F;
+    }
     const int sz = static_cast<int>(buffer_.size());
     const int read_pos = wrap_index(static_cast<int>(write_pos_) - int_delay_, sz);
     return buffer_[static_cast<std::size_t>(read_pos)];
 }
 
-float DelayLine<DelayInterpolation::None>::process(float in) noexcept {
-    if (buffer_.empty())
+float DelayLine<DelayInterpolation::NONE>::process(float in) noexcept {
+    if (buffer_.empty()) {
         return 0.0F;
+    }
     const float out = read();
     buffer_[write_pos_] = in;
     write_pos_ = (write_pos_ + 1) % buffer_.size();
     return out;
 }
 
-void DelayLine<DelayInterpolation::None>::process_block(float* buffer, std::size_t n) noexcept {
-    if (!buffer || n == 0)
+void DelayLine<DelayInterpolation::NONE>::process_block(float* buffer, std::size_t n) noexcept {
+    if (!buffer || n == 0) {
         return;
-    for (std::size_t i = 0; i < n; ++i)
+    }
+    for (std::size_t i = 0; i < n; ++i) {
         buffer[i] = process(buffer[i]);
+    }
 }
 
-void DelayLine<DelayInterpolation::None>::reset() noexcept {
+void DelayLine<DelayInterpolation::NONE>::reset() noexcept {
     std::fill(buffer_.begin(), buffer_.end(), 0.0F);
     write_pos_ = 0;
 }
@@ -74,11 +82,12 @@ void DelayLine<DelayInterpolation::None>::reset() noexcept {
 // Linear
 // ===================================================================
 
-DelayLine<DelayInterpolation::Linear>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
+DelayLine<DelayInterpolation::LINEAR>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
 
-void DelayLine<DelayInterpolation::Linear>::set_max_delay(std::size_t max_samples) {
-    if (max_samples == 0)
+void DelayLine<DelayInterpolation::LINEAR>::set_max_delay(std::size_t max_samples) {
+    if (max_samples == 0) {
         max_samples = 1;
+    }
 
     // Clamp current delay to new max to prevent buffer overflow
     if (delay_samples_ >= static_cast<float>(max_samples)) {
@@ -89,17 +98,18 @@ void DelayLine<DelayInterpolation::Linear>::set_max_delay(std::size_t max_sample
     write_pos_ = 0;
 }
 
-void DelayLine<DelayInterpolation::Linear>::set_delay(float samples) noexcept {
+void DelayLine<DelayInterpolation::LINEAR>::set_delay(float samples) noexcept {
     delay_samples_ = std::max(0.0F, samples);
 }
 
-void DelayLine<DelayInterpolation::Linear>::set_feedback(float amount) noexcept {
+void DelayLine<DelayInterpolation::LINEAR>::set_feedback(float amount) noexcept {
     feedback_ = std::max(0.0F, std::min(amount, 0.9999F));
 }
 
-float DelayLine<DelayInterpolation::Linear>::read_internal(float delay_samples) const noexcept {
-    if (buffer_.empty())
+float DelayLine<DelayInterpolation::LINEAR>::read_internal(float delay_samples) const noexcept {
+    if (buffer_.empty()) {
         return 0.0F;
+    }
     const int sz = static_cast<int>(buffer_.size());
 
     const float frac = delay_samples - std::floor(delay_samples);
@@ -111,30 +121,33 @@ float DelayLine<DelayInterpolation::Linear>::read_internal(float delay_samples) 
     const float s0 = buffer_[static_cast<std::size_t>(idx0)];
     const float s1 = buffer_[static_cast<std::size_t>(idx1)];
 
-    return s0 + frac * (s1 - s0);
+    return s0 + (frac * (s1 - s0));
 }
 
-float DelayLine<DelayInterpolation::Linear>::read(float delay_samples) const noexcept {
+float DelayLine<DelayInterpolation::LINEAR>::read(float delay_samples) const noexcept {
     return read_internal(delay_samples);
 }
 
-float DelayLine<DelayInterpolation::Linear>::process(float in) noexcept {
-    if (buffer_.empty())
+float DelayLine<DelayInterpolation::LINEAR>::process(float in) noexcept {
+    if (buffer_.empty()) {
         return 0.0F;
+    }
     const float out = read_internal(delay_samples_);
     buffer_[write_pos_] = in;
     write_pos_ = (write_pos_ + 1) % buffer_.size();
     return out;
 }
 
-void DelayLine<DelayInterpolation::Linear>::process_block(float* buffer, std::size_t n) noexcept {
-    if (!buffer || n == 0)
+void DelayLine<DelayInterpolation::LINEAR>::process_block(float* buffer, std::size_t n) noexcept {
+    if (!buffer || n == 0) {
         return;
-    for (std::size_t i = 0; i < n; ++i)
+    }
+    for (std::size_t i = 0; i < n; ++i) {
         buffer[i] = process(buffer[i]);
+    }
 }
 
-void DelayLine<DelayInterpolation::Linear>::reset() noexcept {
+void DelayLine<DelayInterpolation::LINEAR>::reset() noexcept {
     std::fill(buffer_.begin(), buffer_.end(), 0.0F);
     write_pos_ = 0;
 }
@@ -143,11 +156,12 @@ void DelayLine<DelayInterpolation::Linear>::reset() noexcept {
 // Lagrange3rd
 // ===================================================================
 
-DelayLine<DelayInterpolation::Lagrange3rd>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
+DelayLine<DelayInterpolation::LAGRANGE3RD>::DelayLine(std::size_t max_samples) : buffer_(max_samples, 0.0F) {}
 
-void DelayLine<DelayInterpolation::Lagrange3rd>::set_max_delay(std::size_t max_samples) {
-    if (max_samples == 0)
+void DelayLine<DelayInterpolation::LAGRANGE3RD>::set_max_delay(std::size_t max_samples) {
+    if (max_samples == 0) {
         max_samples = 1;
+    }
 
     // Clamp current delay to new max to prevent buffer overflow
     if (delay_samples_ >= static_cast<float>(max_samples)) {
@@ -158,17 +172,18 @@ void DelayLine<DelayInterpolation::Lagrange3rd>::set_max_delay(std::size_t max_s
     write_pos_ = 0;
 }
 
-void DelayLine<DelayInterpolation::Lagrange3rd>::set_delay(float samples) noexcept {
+void DelayLine<DelayInterpolation::LAGRANGE3RD>::set_delay(float samples) noexcept {
     delay_samples_ = std::max(0.0F, samples);
 }
 
-void DelayLine<DelayInterpolation::Lagrange3rd>::set_feedback(float amount) noexcept {
+void DelayLine<DelayInterpolation::LAGRANGE3RD>::set_feedback(float amount) noexcept {
     feedback_ = std::max(0.0F, std::min(amount, 0.9999F));
 }
 
-float DelayLine<DelayInterpolation::Lagrange3rd>::read_internal(float delay_samples) const noexcept {
-    if (buffer_.empty())
+float DelayLine<DelayInterpolation::LAGRANGE3RD>::read_internal(float delay_samples) const noexcept {
+    if (buffer_.empty()) {
         return 0.0F;
+    }
     const int sz = static_cast<int>(buffer_.size());
 
     const float frac = delay_samples - std::floor(delay_samples);
@@ -187,36 +202,39 @@ float DelayLine<DelayInterpolation::Lagrange3rd>::read_internal(float delay_samp
     const float c2 = (-3.0F * f3 + 4.0F * f2 + f) * 0.5F;
     const float c3 = (f3 - f2) * 0.5F;
 
+    const std::array<float, 4> coeffs = {c0, c1, c2, c3};
     float out = 0.0F;
     for (int tap = 0; tap < 4; ++tap) {
         const int idx = wrap_index(base - tap, sz);
-        const float coeffs[4] = {c0, c1, c2, c3};
-        out += buffer_[static_cast<std::size_t>(idx)] * coeffs[tap];
+        out += buffer_[static_cast<std::size_t>(idx)] * coeffs[static_cast<std::size_t>(tap)];
     }
     return out;
 }
 
-float DelayLine<DelayInterpolation::Lagrange3rd>::read(float delay_samples) const noexcept {
+float DelayLine<DelayInterpolation::LAGRANGE3RD>::read(float delay_samples) const noexcept {
     return read_internal(delay_samples);
 }
 
-float DelayLine<DelayInterpolation::Lagrange3rd>::process(float in) noexcept {
-    if (buffer_.empty())
+float DelayLine<DelayInterpolation::LAGRANGE3RD>::process(float in) noexcept {
+    if (buffer_.empty()) {
         return 0.0F;
+    }
     const float out = read_internal(delay_samples_);
     buffer_[write_pos_] = in;
     write_pos_ = (write_pos_ + 1) % buffer_.size();
     return out;
 }
 
-void DelayLine<DelayInterpolation::Lagrange3rd>::process_block(float* buffer, std::size_t n) noexcept {
-    if (!buffer || n == 0)
+void DelayLine<DelayInterpolation::LAGRANGE3RD>::process_block(float* buffer, std::size_t n) noexcept {
+    if (!buffer || n == 0) {
         return;
-    for (std::size_t i = 0; i < n; ++i)
+    }
+    for (std::size_t i = 0; i < n; ++i) {
         buffer[i] = process(buffer[i]);
+    }
 }
 
-void DelayLine<DelayInterpolation::Lagrange3rd>::reset() noexcept {
+void DelayLine<DelayInterpolation::LAGRANGE3RD>::reset() noexcept {
     std::fill(buffer_.begin(), buffer_.end(), 0.0F);
     write_pos_ = 0;
 }
