@@ -7,6 +7,8 @@
 # 1. build-and-test   — compile + ctest on Linux (GCC & Clang), macOS, Windows
 # 2. clang-format     — reject PRs that introduce style violations
 # 3. clang-tidy       — static analysis on Linux/Clang
+# 4. wasm-build       — verify WebAssembly build with Emscripten
+# 5. docs             — deploy Doxygen API docs to GitHub Pages (main only)
 #
 # Triggers
 # --------
@@ -20,6 +22,11 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+
+# Cancel in-progress runs for the same branch / PR to save runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # =============================================================================
 # Job 1: Build & Test (matrix: OS × compiler)
@@ -88,9 +95,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # ── CPM source cache ───────────────────────────────────────────
-      # Persists downloaded CPM packages across runs so CMake configure
-      # does not re-fetch GoogleTest (and future deps) on every job.
       - name: Cache CPM packages
         uses: actions/cache@v5
         with:
@@ -98,11 +102,6 @@ jobs:
           key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
           restore-keys: cpm-${{ runner.os }}-
 
-      - name: Prepare CPM cache dir
-        if: runner.os != 'Windows'
-        run: mkdir -p ~/.cache/CPM/cpm
-
-      # ── Linux: install Clang-18 if needed ─────────────────────────
       - name: Install Clang-18 (Linux)
         if: runner.os == 'Linux' && matrix.compiler == 'clang'
         run: |
@@ -111,8 +110,6 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y clang-18
 
-      # ── Configure: Linux / macOS ───────────────────────────────────
-      # Use CC/CXX env vars to select the exact compiler for Unix targets.
       - name: Configure CMake (Linux/macOS)
         if: runner.os != 'Windows'
         env:
@@ -126,10 +123,6 @@ jobs:
             -DSONICFORGE_BUILD_EXAMPLES=ON \
             -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF
 
-      # ── Configure: Windows / MSVC ──────────────────────────────────
-      # On Windows, CMake discovers MSVC through the VS generator.
-      # We do NOT set CC/CXX — those variables are irrelevant for the
-      # Visual Studio generator and can confuse the toolchain detection.
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -142,11 +135,9 @@ jobs:
             -DSONICFORGE_BUILD_EXAMPLES=ON `
             -DSONICFORGE_OPTIMIZE_FOR_HOST=OFF
 
-      # ── Build ──────────────────────────────────────────────────────
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} --parallel
 
-      # ── Test ───────────────────────────────────────────────────────
       - name: Run Tests
         working-directory: build
         run: ctest -C ${{ matrix.build_type }} --output-on-failure
@@ -171,9 +162,8 @@ jobs:
 
       - name: Check formatting
         run: |
-          # Collect all project C++ sources (exclude build directories)
           FILES=$(find include src tests examples web/src \
-            -name "*.cpp" -o -name "*.hpp" -o -name "*.h" 2>/dev/null | sort)
+            \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) 2>/dev/null | sort)
 
           if [ -z "$FILES" ]; then
             echo "No C++ files found."
@@ -183,7 +173,6 @@ jobs:
           echo "Checking formatting of:"
           echo "$FILES"
 
-          # Non-zero exit means clang-format would change the file
           clang-format-18 --dry-run --Werror $FILES
           echo "All files are correctly formatted."
 
@@ -198,17 +187,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # ── CPM source cache ─────────────────────────────────────────────
       - name: Cache CPM packages
         uses: actions/cache@v5
         with:
           path: ~/.cache/CPM
           key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
           restore-keys: cpm-${{ runner.os }}-
-
-      - name: Prepare CPM cache dir
-        if: runner.os != 'Windows'
-        run: mkdir -p ~/.cache/CPM/cpm
 
       - name: Install Clang-18 toolchain
         run: |
@@ -217,8 +201,6 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y clang-18 clang-tidy-18
 
-      # Generate compile_commands.json required by clang-tidy.
-      # CPM_SOURCE_CACHE re-uses packages fetched by build-and-test.
       - name: Configure CMake (generate compile_commands.json)
         env:
           CC:  clang-18
@@ -231,16 +213,6 @@ jobs:
             -DSONICFORGE_BUILD_TESTS=ON \
             -DSONICFORGE_BUILD_EXAMPLES=ON
 
-      # Run clang-tidy against the core library and tests only.
-      # Examples are intentionally excluded to keep warnings focused.
-      # --warnings-as-errors='*' ensures new violations fail the job
-      # before they land on main.
-      #
-      # We rely on compile_commands.json (via -p build) for all include
-      # paths — including GoogleTest headers fetched by CPM — so we do
-      # NOT override flags with a trailing `--`.  HeaderFilterRegex in
-      # .clang-tidy already restricts diagnostic reporting to project
-      # headers (.*sonicforge.*), keeping third-party GTest headers quiet.
       - name: Run clang-tidy
         run: |
           clang-tidy-18 \
@@ -299,7 +271,9 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install Doxygen
-        run: sudo apt-get install -y doxygen graphviz
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y doxygen graphviz
 
       - name: Generate docs
         run: doxygen Doxyfile
